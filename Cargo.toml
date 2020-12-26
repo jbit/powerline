@@ -1,0 +1,14 @@
+[package]
+name = "powerline"
+version = "0.1.0"
+authors = ["James Lee <jbit@jbit.net>"]
+edition = "2018"
+description = "Work-in-progress: Power-line communication library"
+keywords = ["powerline", "plc", "homeplug"]
+license = "BSD-2-Clause"
+
+[badges]
+maintenance = { status = "experimental" }
+
+[dependencies]
+libc = "0.2.81"
