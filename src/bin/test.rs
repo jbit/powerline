@@ -71,6 +71,40 @@ fn station_capability<T: EtherSocket>(
     Ok(())
 }
 
+fn bridge_info<T: EtherSocket>(socket: &mut T, destination: EtherAddr) -> Result<(), T::Error> {
+    let mut message = [0u8; 60];
+    hpav_set_header(&mut message, MMV::HOMEPLUG_AV_1_1, MMType::CM_BRG_INFO);
+    socket.sendto(destination, &message)?;
+
+    let mut buffer = [0; 1500];
+    while let Some((addr, msg)) = socket.recvfrom(&mut buffer, Some(Duration::from_millis(100)))? {
+        if addr != destination {
+            continue;
+        }
+        let header = Header(msg);
+
+        use MMTypeCode::*;
+        match (header.mmv(), header.mmtype().base(), header.mmtype().code()) {
+            (_, MMType::CM_MME_ERROR, IND) => {
+                println!("{:?}", MMEError(addr, msg));
+            }
+            (MMV::HOMEPLUG_AV_1_1, MMType::CM_BRG_INFO, CNF) => {
+                let caps = BridgeInfo(addr, msg);
+                print!("{:?}", caps);
+            }
+            _ => {
+                println!(
+                    "[{:?}] {:?}:{:?} - Unexpected message",
+                    addr,
+                    header.mmv(),
+                    header.mmtype()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn main() {
     for interface in LinuxInterface::interfaces().unwrap() {
         if !interface.is_up() || interface.is_loopback() {
@@ -95,6 +129,8 @@ fn main() {
         // Try to query the capabilities of all stations, not just ones that replied to above discover messages
         for addr in all_stations {
             station_capability(&mut socket, addr).unwrap();
+            bridge_info(&mut socket, addr).unwrap();
+            println!();
         }
     }
 }
