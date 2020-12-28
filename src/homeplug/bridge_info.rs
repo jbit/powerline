@@ -1,10 +1,9 @@
 use super::*;
 use crate::*;
-use core::ops::Deref;
 
 #[derive(Eq, PartialEq, Hash)]
-pub struct BridgeInfo<T: Deref<Target = [u8]>>(pub EtherAddr, pub T);
-impl<T: Deref<Target = [u8]>> BridgeInfo<T> {
+pub struct BridgeInfo<'a>(pub &'a [u8]);
+impl BridgeInfo<'_> {
     pub fn is_bridge(&self) -> bool {
         self.payload()[0] != 0
     }
@@ -23,20 +22,21 @@ impl<T: Deref<Target = [u8]>> BridgeInfo<T> {
             .map(|data| EtherAddr::from_slice(data))
     }
 }
-impl<T: Deref<Target = [u8]>> Message for BridgeInfo<T> {
+impl Message for BridgeInfo<'_> {
     fn message_data(&self) -> &[u8] {
-        &self.1
+        &self.0
     }
 }
-impl<T: Deref<Target = [u8]>> core::fmt::Debug for BridgeInfo<T> {
+impl core::fmt::Debug for BridgeInfo<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         if self.is_bridge() {
-            writeln!(f, "[{:?}] Bridge TEI={}", self.0, self.tei())?;
-            for addr in self.destinations() {
-                writeln!(f, "  {:?}", addr)?;
-            }
+            write!(f, "Bridge(TEI={} ", self.tei())?;
+            let mut l = f.debug_list();
+            l.entries(self.destinations());
+            l.finish()?;
+            write!(f, ")")?;
         } else {
-            writeln!(f, "[{:?}] Not a bridge", self.0)?;
+            write!(f, "Not a bridge")?;
         }
         Ok(())
     }

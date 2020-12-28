@@ -1,6 +1,4 @@
 use super::*;
-use crate::*;
-use core::ops::Deref;
 
 #[repr(transparent)]
 #[derive(Default, PartialEq, Eq, Copy, Clone)]
@@ -21,8 +19,8 @@ impl core::fmt::Debug for ErrorType {
     }
 }
 
-pub struct MMEError<T: Deref<Target = [u8]>>(pub EtherAddr, pub T);
-impl<T: Deref<Target = [u8]>> MMEError<T> {
+pub struct MMEError<'a>(pub &'a [u8]);
+impl MMEError<'_> {
     pub fn error(&self) -> ErrorType {
         ErrorType(self.payload()[0])
     }
@@ -36,17 +34,16 @@ impl<T: Deref<Target = [u8]>> MMEError<T> {
         u16::from_le_bytes([self.payload()[4], self.payload()[5]]) as usize
     }
 }
-impl<T: Deref<Target = [u8]>> Message for MMEError<T> {
+impl Message for MMEError<'_> {
     fn message_data(&self) -> &[u8] {
-        &self.1
+        &self.0
     }
 }
-impl<T: Deref<Target = [u8]>> core::fmt::Debug for MMEError<T> {
+impl core::fmt::Debug for MMEError<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(
             f,
-            "[{:?}] MMEError({:?} MMV:{:?} MMType:{:?} Offset:{})",
-            self.0,
+            "MMEError({:?} MMV:{:?} MMType:{:?} Offset:{})",
             self.error(),
             self.error_mmv(),
             self.error_mmtype(),

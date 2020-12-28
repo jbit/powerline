@@ -1,6 +1,5 @@
 use super::*;
 use crate::*;
-use core::ops::Deref;
 
 pub struct Station<'a>(&'a [u8]);
 impl Station<'_> {
@@ -67,8 +66,8 @@ impl core::fmt::Debug for Network<'_> {
 }
 
 #[derive(Eq, PartialEq, Hash)]
-pub struct DiscoverList<T: Deref<Target = [u8]>>(pub EtherAddr, pub T);
-impl<T: Deref<Target = [u8]>> DiscoverList<T> {
+pub struct DiscoverList<'a>(pub &'a [u8]);
+impl DiscoverList<'_> {
     pub fn stations(&self) -> impl ExactSizeIterator + Iterator<Item = Station> {
         let data = self.payload();
         let station_count = data[0] as usize;
@@ -92,14 +91,14 @@ impl<T: Deref<Target = [u8]>> DiscoverList<T> {
             .map(|data| Network(data))
     }
 }
-impl<T: Deref<Target = [u8]>> Message for DiscoverList<T> {
+impl Message for DiscoverList<'_> {
     fn message_data(&self) -> &[u8] {
-        &self.1
+        &self.0
     }
 }
-impl<T: Deref<Target = [u8]>> core::fmt::Debug for DiscoverList<T> {
+impl core::fmt::Debug for DiscoverList<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        writeln!(f, "[{:?}] {:?}:{:?}", self.0, self.mmv(), self.mmtype())?;
+        writeln!(f, "{:?}:{:?}", self.mmv(), self.mmtype())?;
         for i in self.stations() {
             writeln!(f, "  {:?}", i)?;
         }

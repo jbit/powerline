@@ -1,7 +1,6 @@
 use super::*;
 use crate::*;
 use core::convert::TryInto;
-use core::ops::Deref;
 
 #[repr(transparent)]
 #[derive(Default, PartialEq, Eq, Copy, Clone)]
@@ -20,8 +19,8 @@ impl core::fmt::Debug for Version {
     }
 }
 
-pub struct StationCapabilities<T: Deref<Target = [u8]>>(pub EtherAddr, pub T);
-impl<T: Deref<Target = [u8]>> StationCapabilities<T> {
+pub struct StationCapabilities<'a>(pub &'a [u8]);
+impl StationCapabilities<'_> {
     pub fn version(&self) -> Version {
         Version(self.payload()[0])
     }
@@ -32,19 +31,19 @@ impl<T: Deref<Target = [u8]>> StationCapabilities<T> {
         OUI(self.payload()[7..=9].try_into().unwrap())
     }
 }
-impl<T: Deref<Target = [u8]>> Message for StationCapabilities<T> {
+impl Message for StationCapabilities<'_> {
     fn message_data(&self) -> &[u8] {
-        &self.1
+        &self.0
     }
 }
-impl<T: Deref<Target = [u8]>> core::fmt::Debug for StationCapabilities<T> {
+impl core::fmt::Debug for StationCapabilities<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let data = self.payload();
         let version = self.version();
-        let addr = self.addr();
+        let _addr = self.addr();
         let oui = self.oui();
 
-        write!(f, "[{:?}] Capabilities: {:?} OUI={:?}", addr, version, oui)?;
+        write!(f, "Capabilities({:?} OUI={:?}", version, oui)?;
         if data[10] != 0 {
             write!(f, " AutoConnect")?;
         }
@@ -88,6 +87,7 @@ impl<T: Deref<Target = [u8]>> core::fmt::Debug for StationCapabilities<T> {
         if data[24] != 0 || data[25] != 0 {
             write!(f, " Ver={}.{}", data[24], data[25])?;
         }
+        write!(f, ")")?;
         Ok(())
     }
 }

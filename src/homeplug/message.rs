@@ -8,7 +8,7 @@ mod offset {
     pub const FMSN: usize = 4;
 }
 
-pub trait Message {
+pub trait Message: core::fmt::Debug {
     fn message_data(&self) -> &[u8];
     fn mmv(&self) -> MMV {
         MMV(self.message_data()[offset::MMV])
@@ -29,10 +29,16 @@ pub trait Message {
     // TODO: Fragmentation support for HPAV1.1/2.0 messages
 }
 
-pub struct Header<'a>(pub &'a [u8]);
-impl Message for Header<'_> {
+pub struct UnknownMessage<'a>(pub &'a [u8]);
+impl Message for UnknownMessage<'_> {
     fn message_data(&self) -> &[u8] {
-        self.0
+        &self.0
+    }
+}
+impl core::fmt::Debug for UnknownMessage<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "MMV:{:?} MMType:{:?}", self.mmv(), self.mmtype())?;
+        Ok(())
     }
 }
 
