@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 #[repr(transparent)]
 #[derive(Default, PartialEq, Eq, Copy, Clone)]
 pub struct OUI(pub [u8; 3]);
@@ -17,14 +15,14 @@ impl OUI {
         })
     }
 }
-impl Deref for OUI {
+impl core::ops::Deref for OUI {
     type Target = [u8; 3];
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl std::fmt::Debug for OUI {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for OUI {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if let Some(name) = self.name() {
             write!(f, "{}", name)
         } else {

@@ -1,11 +1,14 @@
+extern crate std;
+
 use crate::*;
-use libc::{bind, close, if_nametoindex, recvfrom, sendto, socket};
-use libc::{c_void, sockaddr, sockaddr_ll};
-use libc::{AF_PACKET, ARPHRD_ETHER, SOCK_DGRAM};
-use std::convert::TryInto;
+use core::convert::TryInto;
+use core::mem::size_of;
+use libc::{bind, close, if_nametoindex, recvfrom, sendto, setsockopt, socket};
+use libc::{c_void, sockaddr, sockaddr_ll, suseconds_t, time_t, timeval};
+use libc::{AF_PACKET, ARPHRD_ETHER, SOCK_DGRAM, SOL_SOCKET, SO_RCVTIMEO};
 use std::ffi::CStr;
+use std::format;
 use std::io::{Error, ErrorKind, Result};
-use std::mem::size_of;
 use std::os::unix::io::RawFd;
 
 #[derive(Debug)]
@@ -73,8 +76,31 @@ impl EtherSocket for LinuxRawSocket {
             Ok(())
         }
     }
-    fn recvfrom<'a>(&mut self, buffer: &'a mut [u8]) -> Result<(EtherAddr, &'a [u8])> {
+    fn recvfrom<'a>(
+        &mut self,
+        buffer: &'a mut [u8],
+        timeout: Option<Duration>,
+    ) -> Result<Option<(EtherAddr, &'a [u8])>> {
         unsafe {
+            let tv = if let Some(timeout) = timeout {
+                timeval {
+                    tv_sec: timeout.as_secs() as time_t,
+                    tv_usec: timeout.subsec_micros() as suseconds_t,
+                }
+            } else {
+                timeval {
+                    tv_sec: 0,
+                    tv_usec: 0,
+                }
+            };
+            setsockopt(
+                self.fd,
+                SOL_SOCKET,
+                SO_RCVTIMEO,
+                &tv as *const _ as *const c_void,
+                size_of::<timeval>() as u32,
+            );
+
             let mut sa = sockaddr_ll {
                 sll_family: AF_PACKET as u16,
                 sll_protocol: self.ethertype.as_be_u16(),
@@ -90,7 +116,12 @@ impl EtherSocket for LinuxRawSocket {
             let mut addrlen = size_of::<sockaddr_ll>() as u32;
             let size = recvfrom(self.fd, buf, len, 0, addr, &mut addrlen);
             if size == -1 {
-                return Err(Error::last_os_error());
+                let e = Error::last_os_error();
+                if e.kind() == ErrorKind::WouldBlock {
+                    return Ok(None);
+                } else {
+                    return Err(e);
+                }
             }
             let addr = EtherAddr(sa.sll_addr[..6].try_into().unwrap());
             if size as usize > buffer.len() {
@@ -98,7 +129,7 @@ impl EtherSocket for LinuxRawSocket {
                 return Err(Error::new(ErrorKind::Other, msg));
             }
             let data = &buffer[..size as usize];
-            Ok((addr, data))
+            Ok(Some((addr, data)))
         }
     }
 }

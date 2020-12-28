@@ -21,8 +21,8 @@ impl EtherType {
         self.0.to_be()
     }
 }
-impl std::fmt::Debug for EtherType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Debug for EtherType {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         if let Some(name) = self.name() {
             write!(f, "{}", name)
         } else {

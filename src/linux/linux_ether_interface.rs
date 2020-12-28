@@ -1,10 +1,14 @@
+extern crate std;
+
 use crate::{linux::*, *};
+use core::convert::TryInto;
+use core::ptr::null_mut;
 use libc::{freeifaddrs, getifaddrs};
 use libc::{ifaddrs, sockaddr_ll};
 use libc::{AF_PACKET, IFF_LOOPBACK, IFF_UP};
+use std::borrow::ToOwned;
+use std::ffi::{CStr, CString};
 use std::io::{Error, Result};
-use std::ptr::null_mut;
-use std::{convert::TryInto, ffi::CStr, ffi::CString};
 
 pub struct LinuxEtherInterfaceIter {
     first: *mut ifaddrs,
