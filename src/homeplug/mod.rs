@@ -1,3 +1,5 @@
+pub mod broadcom;
+
 mod bridge_info;
 mod discover_list;
 mod message;

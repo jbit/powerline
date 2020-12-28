@@ -13,6 +13,7 @@ mod offset {
 pub trait Message: core::fmt::Debug {
     const MMV: MMV;
     const MMTYPE: MMType;
+    const OUI: OUI = OUI([0x00, 0x00, 0x00]);
     fn message_data(&self) -> &[u8];
     fn mmv(&self) -> MMV {
         MMV(self.message_data()[offset::MMV])
@@ -58,16 +59,23 @@ impl core::fmt::Debug for UnknownMessage<'_> {
     }
 }
 
-pub fn hpav_set_header(data: &mut [u8], mmv: MMV, mmtype: MMType) -> &mut [u8] {
-    data[offset::MMV] = mmv.0;
-    data[offset::MMTYPE_L] = mmtype.to_le_bytes()[0];
-    data[offset::MMTYPE_H] = mmtype.to_le_bytes()[1];
-    match mmv {
+pub fn hpav_set_header<M: Message>(data: &mut [u8]) -> &mut [u8] {
+    data[offset::MMV] = M::MMV.0;
+    data[offset::MMTYPE_L] = M::MMTYPE.to_le_bytes()[0];
+    data[offset::MMTYPE_H] = M::MMTYPE.to_le_bytes()[1];
+    match M::MMV {
         MMV::HOMEPLUG_AV_1_0 => &mut data[3..],
         MMV::HOMEPLUG_AV_1_1 | MMV::HOMEPLUG_AV_2_0 => {
             data[offset::FMI] = 0;
             data[offset::FMSN] = 0;
-            &mut data[5..]
+            if M::MMTYPE.is_vendor() {
+                data[5] = M::OUI[0];
+                data[6] = M::OUI[1];
+                data[7] = M::OUI[2];
+                &mut data[8..]
+            } else {
+                &mut data[5..]
+            }
         }
         _ => &mut data[0..0],
     }

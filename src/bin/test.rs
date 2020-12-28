@@ -1,6 +1,6 @@
 use powerline::{homeplug::*, linux::*, *};
-use std::collections::HashSet;
 use std::time::Duration;
+use std::{cmp::max, collections::HashSet};
 
 fn discover_list<T: EtherSocket>(
     socket: &mut T,
@@ -8,7 +8,7 @@ fn discover_list<T: EtherSocket>(
 ) -> Result<(), T::Error> {
     type M<'a> = DiscoverList<'a>; // TODO: This function should be able to be generic,
     let mut message = [0u8; 60];
-    hpav_set_header(&mut message, M::MMV, M::MMTYPE);
+    hpav_set_header::<M>(&mut message);
     socket.sendto(EtherAddr::BROADCAST, &message)?;
 
     let mut buffer = [0; 1500];
@@ -29,10 +29,14 @@ fn single_message<'a, M: Message + From<&'a [u8]>, T: EtherSocket>(
     socket: &mut T,
     buffer: &'a mut [u8; 1500],
     destination: EtherAddr,
+    arguments: &[u8],
 ) -> Result<Option<M>, T::Error> {
-    let mut message = [0u8; 60];
-    hpav_set_header(&mut message, M::MMV, M::MMTYPE);
-    socket.sendto(destination, &message)?;
+    buffer.iter_mut().for_each(|x| *x = 0x00);
+    let payload = hpav_set_header::<M>(buffer);
+    payload[..arguments.len()].copy_from_slice(arguments);
+
+    let size = max(60, arguments.len() + 8);
+    socket.sendto(destination, &buffer[..size])?;
 
     let mut result = None;
 
@@ -44,7 +48,7 @@ fn single_message<'a, M: Message + From<&'a [u8]>, T: EtherSocket>(
         if msg.mmv() == M::MMV && msg.mmtype() == M::MMTYPE.cnf() {
             result = Some(M::from(buffer));
             break;
-        } else if msg.mmv() == MMV::HOMEPLUG_AV_1_1 && msg.mmtype() == MMType::CM_MME_ERROR.ind() {
+        } else if msg.mmtype() == MMType::CM_MME_ERROR.ind() {
             println!("[{:?}] {:?}", addr, MMEError(data));
         } else {
             println!("[{:?}] {:?} - Unexpected message", addr, msg);
@@ -76,12 +80,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Try to query all stations, not just ones that replied directly to above discover messages
         for addr in all_stations {
             let mut b = [0; 1500];
+            let mut oui = OUI::default();
+
             println!("[{:?}]", addr);
-            if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr)? {
+            if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
+                println!("  {:?}", m);
+                oui = m.oui();
+            }
+            if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr, &[])? {
                 println!("  {:?}", m);
             }
-            if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr)? {
-                println!("  {:?}", m);
+
+            if oui == OUI::BROADCOM {
+                let seq = 0x77;
+                let mut xs = interface.open(EtherType::MEDIAXTREAM)?;
+                if let Some(m) =
+                    single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x25])?
+                {
+                    let s = String::from_utf8_lossy(m.records().next().unwrap());
+                    println!("  {:?}", s.trim_end_matches('\0'));
+                }
+                if let Some(m) =
+                    single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x26])?
+                {
+                    let s = String::from_utf8_lossy(m.records().next().unwrap());
+                    println!("  {:?}", s.trim_end_matches('\0'));
+                }
             }
         }
     }
