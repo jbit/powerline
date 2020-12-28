@@ -2,7 +2,7 @@ use super::OUI;
 use core::convert::TryInto;
 
 #[repr(transparent)]
-#[derive(Default, PartialEq, Copy, Clone)]
+#[derive(Default, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct EtherAddr(pub [u8; 6]);
 impl EtherAddr {
     pub const NULL: EtherAddr = EtherAddr([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);

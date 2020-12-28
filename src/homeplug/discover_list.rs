@@ -3,10 +3,15 @@ use crate::*;
 use core::ops::Deref;
 
 pub struct Station<'a>(&'a [u8]);
+impl Station<'_> {
+    pub fn addr(&self) -> EtherAddr {
+        EtherAddr::from_slice(&self.0[0..=5])
+    }
+}
 impl core::fmt::Debug for Station<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let data = self.0;
-        let sta_mac = EtherAddr::from_slice(&data[0..=5]);
+        let addr = self.addr();
         let tei = data[6];
         let same_network = data[7];
         let snid = data[8];
@@ -33,8 +38,8 @@ impl core::fmt::Debug for Station<'_> {
         let ble = data[11];
         write!(
             f,
-            "STA[{:?}] tei={} same_network:{} snid:{} level:{} ble:{}",
-            sta_mac, tei, same_network, snid, sta_level, ble
+            "STA[{:?}] tei={} same_network={} snid={} level={} ble={}",
+            addr, tei, same_network, snid, sta_level, ble
         )?;
 
         Ok(())
@@ -61,6 +66,7 @@ impl core::fmt::Debug for Network<'_> {
     }
 }
 
+#[derive(Eq, PartialEq, Hash)]
 pub struct DiscoverList<T: Deref<Target = [u8]>>(pub EtherAddr, pub T);
 impl<T: Deref<Target = [u8]>> DiscoverList<T> {
     pub fn stations(&self) -> impl ExactSizeIterator + Iterator<Item = Station> {
