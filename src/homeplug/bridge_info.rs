@@ -23,6 +23,8 @@ impl BridgeInfo<'_> {
     }
 }
 impl Message for BridgeInfo<'_> {
+    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
+    const MMTYPE: MMType = MMType::CM_BRG_INFO;
     fn message_data(&self) -> &[u8] {
         &self.0
     }
@@ -39,5 +41,10 @@ impl core::fmt::Debug for BridgeInfo<'_> {
             write!(f, "Not a bridge")?;
         }
         Ok(())
+    }
+}
+impl<'a> From<&'a [u8]> for BridgeInfo<'a> {
+    fn from(data: &'a [u8]) -> Self {
+        Self(data)
     }
 }

@@ -35,6 +35,8 @@ impl MMEError<'_> {
     }
 }
 impl Message for MMEError<'_> {
+    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
+    const MMTYPE: MMType = MMType::CM_MME_ERROR;
     fn message_data(&self) -> &[u8] {
         &self.0
     }

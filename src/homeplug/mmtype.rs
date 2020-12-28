@@ -119,6 +119,9 @@ impl MMType {
     pub const fn to_le_bytes(&self) -> [u8; 2] {
         self.0.to_le_bytes()
     }
+    pub const fn is_vendor(&self) -> bool {
+        (self.0 >> 13) & 0b111 == 0b101
+    }
 }
 impl core::fmt::Debug for MMType {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

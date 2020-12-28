@@ -1,4 +1,6 @@
 use super::*;
+use crate::OUI;
+use core::convert::TryInto;
 
 mod offset {
     pub const MMV: usize = 0;
@@ -9,6 +11,8 @@ mod offset {
 }
 
 pub trait Message: core::fmt::Debug {
+    const MMV: MMV;
+    const MMTYPE: MMType;
     fn message_data(&self) -> &[u8];
     fn mmv(&self) -> MMV {
         MMV(self.message_data()[offset::MMV])
@@ -22,8 +26,18 @@ pub trait Message: core::fmt::Debug {
     fn payload(&self) -> &[u8] {
         match self.mmv() {
             MMV::HOMEPLUG_AV_1_0 => &self.message_data()[3..],
-            MMV::HOMEPLUG_AV_1_1 | MMV::HOMEPLUG_AV_2_0 => &self.message_data()[5..],
+            MMV::HOMEPLUG_AV_1_1 if self.mmtype().is_vendor() => &self.message_data()[8..],
+            MMV::HOMEPLUG_AV_1_1 => &self.message_data()[5..],
+            MMV::HOMEPLUG_AV_2_0 if self.mmtype().is_vendor() => &self.message_data()[8..],
+            MMV::HOMEPLUG_AV_2_0 => &self.message_data()[5..],
             _ => &self.message_data()[0..0],
+        }
+    }
+    fn mmoui(&self) -> OUI {
+        if self.mmtype().is_vendor() {
+            OUI(self.message_data()[5..=7].try_into().unwrap())
+        } else {
+            Default::default()
         }
     }
     // TODO: Fragmentation support for HPAV1.1/2.0 messages
@@ -31,6 +45,8 @@ pub trait Message: core::fmt::Debug {
 
 pub struct UnknownMessage<'a>(pub &'a [u8]);
 impl Message for UnknownMessage<'_> {
+    const MMV: MMV = MMV(0xff);
+    const MMTYPE: MMType = MMType(0xffff);
     fn message_data(&self) -> &[u8] {
         &self.0
     }

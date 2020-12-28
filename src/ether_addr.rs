@@ -19,6 +19,15 @@ impl EtherAddr {
     pub fn padded(&self) -> [u8; 8] {
         [self[0], self[1], self[2], self[3], self[4], self[5], 0, 0]
     }
+    pub fn is_unicast(&self) -> bool {
+        !self.is_multicast()
+    }
+    pub fn is_multicast(&self) -> bool {
+        self[0] & 0x80 == 0x80
+    }
+    pub fn is_broadcast(&self) -> bool {
+        *self == Self::BROADCAST
+    }
 }
 impl core::ops::Deref for EtherAddr {
     type Target = [u8; 6];
