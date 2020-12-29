@@ -90,24 +90,15 @@ fn scan_on_interface(interface: LinuxInterface) -> Result<(), Box<dyn std::error
         if oui == OUI::BROADCOM {
             let seq = 0x77;
             let mut xs = interface.open(EtherType::MEDIAXTREAM)?;
-            if let Some(m) =
-                single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x25])?
-            {
+            let a = &[seq, broadcom::Property::NAME_A1.0];
+            if let Some(m) = single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, a)? {
                 let s = String::from_utf8_lossy(m.records().next().unwrap());
-                println!("  {}", s.trim_end_matches('\0'));
-            }
-            if let Some(m) =
-                single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x26])?
-            {
-                let s = String::from_utf8_lossy(m.records().next().unwrap());
-                println!("  {}", s.trim_end_matches('\0'));
+                println!("  Name: {}", s.trim_end_matches('\0'));
             }
         } else {
-            if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &[0x00])? {
-                println!("  {:?}", m);
-            }
-            if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &[0x01])? {
-                println!("  {:?}", m);
+            let a = &[HFIDRequest::GET_USR.0];
+            if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, a)? {
+                println!("  Name: {}", m.hfid());
             }
         }
     }
@@ -170,21 +161,43 @@ fn set_name(
     oui: OUI,
     name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
     let mut b = [0; 1500];
+    let name = name.trim().as_bytes();
 
     if oui == OUI::BROADCOM {
-        // Broadcom devices don't support normal HFID commands
-    } else {
-        let name = name.trim().as_bytes();
-        let mut arguments = [0u8; 64];
-        arguments[0] = HFIDRequest::SET_USR.0;
-        arguments[1..]
+        // Broadcom HPAV2 devices don't support the standard HomePlug AV HFID commands
+        let mut s = interface.open(EtherType::MEDIAXTREAM)?;
+
+        let seq = 0x80;
+        let property = broadcom::Property::NAME_A1.0;
+        let count = 1;
+        let record_size = 64u16;
+        let mut a = [0u8; 70];
+        a[0] = seq;
+        a[1] = property;
+        a[2] = 0x00; // ????
+        a[3] = count;
+        a[4] = record_size.to_le_bytes()[0];
+        a[5] = record_size.to_le_bytes()[1];
+        a[6..]
             .iter_mut()
             .zip(name)
             .for_each(|(dest, src)| *dest = *src);
 
-        if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &arguments)? {
+        if let Some(m) = single_message::<broadcom::SetProperty, _>(&mut s, &mut b, addr, &a)? {
+            println!("  {:?}", m);
+        }
+    } else {
+        let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
+
+        let mut a = [0u8; 64];
+        a[0] = HFIDRequest::SET_USR.0;
+        a[1..]
+            .iter_mut()
+            .zip(name)
+            .for_each(|(dest, src)| *dest = *src);
+
+        if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &a)? {
             println!("  {:?}", m);
         }
     }

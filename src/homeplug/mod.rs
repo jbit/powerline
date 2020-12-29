@@ -11,7 +11,7 @@ mod station_capabilities;
 
 pub use bridge_info::BridgeInfo;
 pub use discover_list::DiscoverList;
-pub use hfid::HFID;
+pub use hfid::*;
 pub use message::*;
 pub use mmeerror::MMEError;
 pub use mmtype::*;
