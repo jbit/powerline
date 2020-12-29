@@ -1,5 +1,6 @@
-use clap::App;
+use clap::{App, Arg};
 use powerline::{homeplug::*, linux::*, *};
+use std::iter::FromIterator;
 use std::time::Duration;
 use std::{cmp::max, collections::HashSet};
 
@@ -58,72 +59,110 @@ fn single_message<'a, M: Message + From<&'a [u8]>, T: EtherSocket>(
     Ok(result)
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _matches = App::new(env!("CARGO_PKG_NAME"))
-        .version(env!("CARGO_PKG_VERSION"))
-        .author(env!("CARGO_PKG_AUTHORS"))
-        .about("Power-line communication (HomePlug AV) management utility")
-        .get_matches();
+fn scan_on_interface(interface: LinuxInterface) -> Result<(), Box<dyn std::error::Error>> {
+    let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
 
-    for interface in LinuxInterface::interfaces()? {
-        if !interface.is_up() || interface.is_loopback() {
-            continue;
+    let mut all_stations: HashSet<EtherAddr> = HashSet::new();
+
+    discover_list(&mut s, |addr, msg| {
+        println!("[{:?}] {:?}", addr, msg);
+        all_stations.insert(addr);
+        for station in msg.stations() {
+            all_stations.insert(station.addr());
         }
-        println!();
-        println!("Interface {:?}", interface);
-        println!("---------");
-        let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
+    })?;
 
-        let mut all_stations: HashSet<EtherAddr> = HashSet::new();
+    // Try to query all stations, not just ones that replied directly to above discover messages
+    for addr in all_stations {
+        let mut b = [0; 1500];
+        let mut oui = OUI::default();
 
-        discover_list(&mut s, |addr, msg| {
-            println!("[{:?}] {:?}", addr, msg);
-            all_stations.insert(addr);
-            for station in msg.stations() {
-                all_stations.insert(station.addr());
+        println!("[{:?}]", addr);
+        if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
+            println!("  {:?}", m);
+            oui = m.oui();
+        }
+        if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr, &[])? {
+            println!("  {:?}", m);
+        }
+        if let Some(m) = single_message::<TestMsg, _>(&mut s, &mut b, addr, &[])? {
+            println!("  {:?}", m);
+        }
+        if oui == OUI::BROADCOM {
+            let seq = 0x77;
+            let mut xs = interface.open(EtherType::MEDIAXTREAM)?;
+            if let Some(m) =
+                single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x25])?
+            {
+                let s = String::from_utf8_lossy(m.records().next().unwrap());
+                println!("  {}", s.trim_end_matches('\0'));
             }
-        })?;
-
-        // Try to query all stations, not just ones that replied directly to above discover messages
-        for addr in all_stations {
-            let mut b = [0; 1500];
-            let mut oui = OUI::default();
-
-            println!("[{:?}]", addr);
-            if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
+            if let Some(m) =
+                single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x26])?
+            {
+                let s = String::from_utf8_lossy(m.records().next().unwrap());
+                println!("  {}", s.trim_end_matches('\0'));
+            }
+        } else {
+            if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &[0x00])? {
                 println!("  {:?}", m);
-                oui = m.oui();
             }
-            if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr, &[])? {
+            if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &[0x01])? {
                 println!("  {:?}", m);
-            }
-            if let Some(m) = single_message::<TestMsg, _>(&mut s, &mut b, addr, &[])? {
-                println!("  {:?}", m);
-            }
-            if oui == OUI::BROADCOM {
-                let seq = 0x77;
-                let mut xs = interface.open(EtherType::MEDIAXTREAM)?;
-                if let Some(m) =
-                    single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x25])?
-                {
-                    let s = String::from_utf8_lossy(m.records().next().unwrap());
-                    println!("  {}", s.trim_end_matches('\0'));
-                }
-                if let Some(m) =
-                    single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x26])?
-                {
-                    let s = String::from_utf8_lossy(m.records().next().unwrap());
-                    println!("  {}", s.trim_end_matches('\0'));
-                }
-            } else {
-                if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &[0x00])? {
-                    println!("  {:?}", m);
-                }
-                if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &[0x01])? {
-                    println!("  {:?}", m);
-                }
             }
         }
     }
+    Ok(())
+}
+
+fn scan(mut interfaces: Option<HashSet<String>>) -> Result<(), Box<dyn std::error::Error>> {
+    for interface in LinuxInterface::interfaces()? {
+        let selected = interfaces.as_mut().map_or_else(
+            || interface.is_up() && !interface.is_loopback(),
+            |set| set.remove(interface.name()),
+        );
+        if selected {
+            println!();
+            println!("Interface {:?}", interface);
+            println!("---------");
+            scan_on_interface(interface)?;
+        }
+    }
+
+    if let Some(interfaces) = interfaces {
+        if !interfaces.is_empty() {
+            println!();
+            println!("Unknown interfaces specified: {:?}", interfaces);
+        }
+    }
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let matches = App::new(env!("CARGO_PKG_NAME"))
+        .version(env!("CARGO_PKG_VERSION"))
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .about("Power-line communication (HomePlug AV) management utility")
+        .subcommand(
+            App::new("scan").about("Discover and list devices").arg(
+                Arg::with_name("interfaces")
+                    .long("interfaces")
+                    .help("Select the interface(s) to discover with")
+                    .multiple(true)
+                    .use_delimiter(true)
+                    .global(true),
+            ),
+        )
+        .get_matches();
+
+    match matches.subcommand() {
+        ("scan", args) | ("", args) => {
+            let interfaces =
+                args.and_then(|args| args.values_of_lossy("interfaces").map(HashSet::from_iter));
+            scan(interfaces)?;
+        }
+        _ => panic!(),
+    }
+
     Ok(())
 }
