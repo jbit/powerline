@@ -1,8 +1,10 @@
 use clap::{App, Arg};
 use powerline::{homeplug::*, linux::*, *};
+use std::cmp::max;
+use std::collections::HashSet;
 use std::iter::FromIterator;
+use std::str::FromStr;
 use std::time::Duration;
-use std::{cmp::max, collections::HashSet};
 
 fn discover_list<T: EtherSocket>(
     socket: &mut T,
@@ -138,27 +140,78 @@ fn scan(mut interfaces: Option<HashSet<String>>) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
+fn find_device(
+    mut interfaces: Option<HashSet<String>>,
+    addr: EtherAddr,
+) -> Result<Option<(impl EtherInterface, OUI)>, Box<dyn std::error::Error>> {
+    for interface in LinuxInterface::interfaces()? {
+        let selected = interfaces.as_mut().map_or_else(
+            || interface.is_up() && !interface.is_loopback(),
+            |set| set.remove(interface.name()),
+        );
+        if selected {
+            let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
+            let mut b = [0; 1500];
+            if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
+                return Ok(Some((interface, m.oui())));
+            }
+        }
+    }
+
+    if let Some(interfaces) = interfaces {
+        if !interfaces.is_empty() {
+            println!();
+            println!("Unknown interfaces specified: {:?}", interfaces);
+        }
+    }
+    Ok(None)
+}
+
+fn valid_etheraddr(s: String) -> Result<(), String> {
+    EtherAddr::from_str(&s)
+        .map(|_| ())
+        .map_err(|_| "".to_string())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .about("Power-line communication (HomePlug AV) management utility")
+        .arg(
+            Arg::with_name("interfaces")
+                .long("interfaces")
+                .help("Select the interface(s) to discover with")
+                .multiple(true)
+                .use_delimiter(true)
+                .global(true),
+        )
+        .subcommand(App::new("scan").about("Discover and list devices"))
         .subcommand(
-            App::new("scan").about("Discover and list devices").arg(
-                Arg::with_name("interfaces")
-                    .long("interfaces")
-                    .help("Select the interface(s) to discover with")
-                    .multiple(true)
-                    .use_delimiter(true)
-                    .global(true),
-            ),
+            App::new("find")
+                .about("Find which interface a specific device is reachable")
+                .arg(
+                    Arg::with_name("device")
+                        .required(true)
+                        .validator(valid_etheraddr),
+                ),
         )
         .get_matches();
 
+    let interfaces = matches
+        .values_of_lossy("interfaces")
+        .map(HashSet::from_iter);
+
     match matches.subcommand() {
-        ("scan", args) | ("", args) => {
-            let interfaces =
-                args.and_then(|args| args.values_of_lossy("interfaces").map(HashSet::from_iter));
+        ("find", Some(args)) => {
+            let addr = EtherAddr::from_str(&args.value_of_lossy("device").unwrap()).unwrap();
+            if let Some((interface, _)) = find_device(interfaces, addr)? {
+                println!("{:?}: Found on {}", addr, interface.name());
+            } else {
+                println!("{:?}: Not found", addr);
+            }
+        }
+        ("scan", _) | ("", _) => {
             scan(interfaces)?;
         }
         _ => panic!(),
