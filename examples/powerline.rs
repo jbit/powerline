@@ -1,3 +1,4 @@
+use clap::App;
 use powerline::{homeplug::*, linux::*, *};
 use std::time::Duration;
 use std::{cmp::max, collections::HashSet};
@@ -58,6 +59,12 @@ fn single_message<'a, M: Message + From<&'a [u8]>, T: EtherSocket>(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _matches = App::new(env!("CARGO_PKG_NAME"))
+        .version(env!("CARGO_PKG_VERSION"))
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .about("Power-line communication (HomePlug AV) management utility")
+        .get_matches();
+
     for interface in LinuxInterface::interfaces()? {
         if !interface.is_up() || interface.is_loopback() {
             continue;
@@ -90,7 +97,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr, &[])? {
                 println!("  {:?}", m);
             }
-
+            if let Some(m) = single_message::<TestMsg, _>(&mut s, &mut b, addr, &[])? {
+                println!("  {:?}", m);
+            }
             if oui == OUI::BROADCOM {
                 let seq = 0x77;
                 let mut xs = interface.open(EtherType::MEDIAXTREAM)?;
