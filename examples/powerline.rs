@@ -87,9 +87,6 @@ fn scan_on_interface(interface: LinuxInterface) -> Result<(), Box<dyn std::error
         if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr, &[])? {
             println!("  {:?}", m);
         }
-        if let Some(m) = single_message::<TestMsg, _>(&mut s, &mut b, addr, &[])? {
-            println!("  {:?}", m);
-        }
         if oui == OUI::BROADCOM {
             let seq = 0x77;
             let mut xs = interface.open(EtherType::MEDIAXTREAM)?;
@@ -143,7 +140,7 @@ fn scan(mut interfaces: Option<HashSet<String>>) -> Result<(), Box<dyn std::erro
 fn find_device(
     mut interfaces: Option<HashSet<String>>,
     addr: EtherAddr,
-) -> Result<Option<(impl EtherInterface, OUI)>, Box<dyn std::error::Error>> {
+) -> Result<Option<(LinuxInterface, OUI)>, Box<dyn std::error::Error>> {
     for interface in LinuxInterface::interfaces()? {
         let selected = interfaces.as_mut().map_or_else(
             || interface.is_up() && !interface.is_loopback(),
@@ -167,10 +164,38 @@ fn find_device(
     Ok(None)
 }
 
+fn set_name(
+    interface: LinuxInterface,
+    addr: EtherAddr,
+    oui: OUI,
+    name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
+    let mut b = [0; 1500];
+
+    if oui == OUI::BROADCOM {
+        // Broadcom devices don't support normal HFID commands
+    } else {
+        let name = name.trim().as_bytes();
+        let mut arguments = [0u8; 64];
+        arguments[0] = HFIDRequest::SET_USR.0;
+        arguments[1..]
+            .iter_mut()
+            .zip(name)
+            .for_each(|(dest, src)| *dest = *src);
+
+        if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &arguments)? {
+            println!("  {:?}", m);
+        }
+    }
+
+    Ok(())
+}
+
 fn valid_etheraddr(s: String) -> Result<(), String> {
     EtherAddr::from_str(&s)
         .map(|_| ())
-        .map_err(|_| "".to_string())
+        .map_err(|_| format!("Invalid MAC address ('{}')", s))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -196,6 +221,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .validator(valid_etheraddr),
                 ),
         )
+        .subcommand(
+            App::new("set-name")
+                .about("Set the name of a device")
+                .args(&[
+                    Arg::with_name("device")
+                        .required(true)
+                        .validator(valid_etheraddr),
+                    Arg::with_name("name").required(true),
+                ]),
+        )
         .get_matches();
 
     let interfaces = matches
@@ -207,6 +242,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let addr = EtherAddr::from_str(&args.value_of_lossy("device").unwrap()).unwrap();
             if let Some((interface, _)) = find_device(interfaces, addr)? {
                 println!("{:?}: Found on {}", addr, interface.name());
+            } else {
+                println!("{:?}: Not found", addr);
+            }
+        }
+        ("set-name", Some(args)) => {
+            let addr = EtherAddr::from_str(&args.value_of_lossy("device").unwrap()).unwrap();
+            let name = args.value_of_lossy("name").unwrap();
+            if let Some((interface, oui)) = find_device(interfaces, addr)? {
+                set_name(interface, addr, oui, &name)?;
             } else {
                 println!("{:?}: Not found", addr);
             }
