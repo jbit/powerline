@@ -98,13 +98,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x25])?
                 {
                     let s = String::from_utf8_lossy(m.records().next().unwrap());
-                    println!("  {:?}", s.trim_end_matches('\0'));
+                    println!("  {}", s.trim_end_matches('\0'));
                 }
                 if let Some(m) =
                     single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, &[seq, 0x26])?
                 {
                     let s = String::from_utf8_lossy(m.records().next().unwrap());
-                    println!("  {:?}", s.trim_end_matches('\0'));
+                    println!("  {}", s.trim_end_matches('\0'));
+                }
+            } else {
+                if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &[0x00])? {
+                    println!("  {:?}", m);
+                }
+                if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &[0x01])? {
+                    println!("  {:?}", m);
                 }
             }
         }

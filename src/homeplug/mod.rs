@@ -2,6 +2,7 @@ pub mod broadcom;
 
 mod bridge_info;
 mod discover_list;
+mod hfid;
 mod message;
 mod mmeerror;
 mod mmtype;
@@ -10,6 +11,7 @@ mod station_capabilities;
 
 pub use bridge_info::BridgeInfo;
 pub use discover_list::DiscoverList;
+pub use hfid::HFID;
 pub use message::*;
 pub use mmeerror::MMEError;
 pub use mmtype::*;
