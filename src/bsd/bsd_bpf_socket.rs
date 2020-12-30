@@ -5,14 +5,14 @@ use libc::{bpf_hdr, c_uint, suseconds_t, time_t, timeval};
 use libc::{close, ioctl, open, read, write};
 use libc::{BIOCGSTATS, BIOCIMMEDIATE, BIOCSBLEN, BIOCSETIF, BIOCSRTIMEOUT};
 use libc::{BPF_ALIGNMENT, EBUSY, IF_NAMESIZE, O_RDWR};
-use std::borrow::ToOwned;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::read_dir;
 use std::io::{Error, ErrorKind, Result};
-use std::mem::{size_of_val, transmute};
+use std::mem::size_of_val;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::io::RawFd;
 use std::vec::Vec;
+use std::{borrow::ToOwned, time::Instant};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone, Default)]
@@ -35,7 +35,7 @@ impl BpfBuffer {
         size_of_val(&self.0)
     }
     pub fn header(&self) -> &bpf_hdr {
-        unsafe { transmute(&self.0) }
+        unsafe { (self.0.as_ptr() as *const bpf_hdr).as_ref().unwrap() }
     }
     pub fn frame(&self) -> &[u8] {
         let header = self.header();
@@ -58,12 +58,17 @@ impl BpfBuffer {
 pub struct BsdBpfSocket {
     filename: CString,
     interface: CString,
+    address: EtherAddr,
     fd: RawFd,
     ethertype: EtherType,
     buffer: BpfBuffer,
 }
 impl BsdBpfSocket {
-    pub(crate) fn new(ethertype: EtherType, interface: &CStr) -> Result<BsdBpfSocket> {
+    pub(crate) fn new(
+        ethertype: EtherType,
+        interface: &CStr,
+        address: EtherAddr,
+    ) -> Result<BsdBpfSocket> {
         let mut bpf_devices: Vec<_> = read_dir("/dev")?
             .filter_map(Result::ok)
             .filter(|e| e.file_name().to_string_lossy().starts_with("bpf"))
@@ -95,6 +100,7 @@ impl BsdBpfSocket {
         let mut socket = BsdBpfSocket {
             filename,
             interface: interface.to_owned(),
+            address,
             fd,
             ethertype,
             buffer: BpfBuffer::new(),
@@ -111,13 +117,13 @@ impl BsdBpfSocket {
         if unsafe { ioctl(self.fd, BIOCGSTATS, &mut value) } == -1 {
             return Err(Error::last_os_error());
         }
-        return Ok(value);
+        Ok(value)
     }
     fn set_buffer_len(&mut self, mut len: c_uint) -> Result<()> {
         if unsafe { ioctl(self.fd, BIOCSBLEN, &mut len) } == -1 {
             return Err(Error::last_os_error());
         }
-        return Ok(());
+        Ok(())
     }
     fn set_interface(&mut self, interface: &CStr) -> Result<()> {
         let mut ifreq = [0u8; 128];
@@ -127,14 +133,14 @@ impl BsdBpfSocket {
         if unsafe { ioctl(self.fd, BIOCSETIF, &mut ifreq) } == -1 {
             return Err(Error::last_os_error());
         }
-        return Ok(());
+        Ok(())
     }
     fn set_immediate(&mut self, on: bool) -> Result<()> {
         let mut value: c_uint = if on { 1 } else { 0 };
         if unsafe { ioctl(self.fd, BIOCIMMEDIATE, &mut value) } == -1 {
             return Err(Error::last_os_error());
         }
-        return Ok(());
+        Ok(())
     }
     fn set_read_timeout(&mut self, timeout: Option<Duration>) -> Result<()> {
         let mut tv = if let Some(timeout) = timeout {
@@ -151,7 +157,7 @@ impl BsdBpfSocket {
         if unsafe { ioctl(self.fd, BIOCSRTIMEOUT, &mut tv) } == -1 {
             return Err(Error::last_os_error());
         }
-        return Ok(());
+        Ok(())
     }
 }
 impl EtherSocket for BsdBpfSocket {
@@ -181,12 +187,13 @@ impl EtherSocket for BsdBpfSocket {
     fn recvfrom<'a>(
         &mut self,
         buffer: &'a mut [u8],
-        timeout: Option<Duration>,
+        mut timeout: Option<Duration>,
     ) -> Result<Option<(EtherAddr, &'a [u8])>> {
         if !self.buffer.wind() {
             // If there are no packets remaining in our buffer, then get a new packet
             self.set_read_timeout(timeout)?;
             // Reading from BPF fd returns buffer with a BPF header
+            let read_time = Instant::now();
             let size = unsafe { read(self.fd, self.buffer.as_mut_ptr(), self.buffer.len()) };
             if size == -1 {
                 let e = Error::last_os_error();
@@ -199,6 +206,10 @@ impl EtherSocket for BsdBpfSocket {
             if size == 0 {
                 return Ok(None);
             }
+            if let Some(previous_timeout) = timeout {
+                let new_timeout = previous_timeout.checked_sub(read_time.elapsed());
+                timeout = Some(new_timeout.unwrap_or_default());
+            }
         }
 
         // Process ethernet header
@@ -206,14 +217,20 @@ impl EtherSocket for BsdBpfSocket {
         let (dest_addr, data) = data.split_at(6);
         let (from_addr, data) = data.split_at(6);
         let (ethertype, data) = data.split_at(2);
-        drop(dest_addr);
+        let _ = dest_addr;
 
         let ethertype = EtherType::from_slice(ethertype);
         if ethertype != self.ethertype {
+            // Skip packets that don't match our ethertype
             return self.recvfrom(buffer, timeout);
         }
 
         let addr = EtherAddr::from_slice(from_addr);
+        if addr == self.address {
+            // Skip packets that are from us
+            return self.recvfrom(buffer, timeout);
+        }
+
         let payload = &mut buffer[0..data.len()];
         payload.copy_from_slice(data);
         Ok(Some((addr, payload)))

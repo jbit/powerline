@@ -102,7 +102,7 @@ impl MMType {
         }
     }
     pub const fn req(&self) -> Self {
-        Self((self.0 & !0b11) + 0b00)
+        Self(self.0 & !0b11)
     }
     pub const fn cnf(&self) -> Self {
         Self((self.0 & !0b11) + 0b01)

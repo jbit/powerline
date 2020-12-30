@@ -12,6 +12,7 @@ maintenance = { status = "experimental" }
 
 [dependencies]
 libc = "0.2.81"
+log =  "0.4"
 
 [dev-dependencies]
 clap = "2.33.3"

@@ -13,11 +13,11 @@ impl EtherType {
     pub const IEEE1905: EtherType = EtherType(0x893a);
 
     pub fn name(&self) -> Option<&'static str> {
-        Some(match self {
-            &EtherType::HOMEPLUG => "HomePlug",
-            &EtherType::HOMEPLUG_AV => "HomePlug AV",
-            &EtherType::MEDIAXTREAM => "Mediaxtream",
-            &EtherType::IEEE1905 => "IEEE 1905",
+        Some(match *self {
+            EtherType::HOMEPLUG => "HomePlug",
+            EtherType::HOMEPLUG_AV => "HomePlug AV",
+            EtherType::MEDIAXTREAM => "Mediaxtream",
+            EtherType::IEEE1905 => "IEEE 1905",
             _ => return None,
         })
     }

@@ -100,7 +100,13 @@ impl Message for DiscoverList<'_> {
 }
 impl core::fmt::Debug for DiscoverList<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        writeln!(f, "{:?}:{:?}", self.mmv(), self.mmtype())?;
+        if self.stations().count() == 0 {
+            write!(f, "No stations, ")?;
+        }
+        if self.networks().count() == 0 {
+            write!(f, "No networks, ")?;
+        }
+        writeln!(f)?;
         for i in self.stations() {
             writeln!(f, "  {:?}", i)?;
         }

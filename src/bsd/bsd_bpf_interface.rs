@@ -35,7 +35,7 @@ impl UnixInterface for BsdBpfInterface {
             let (n, data) = data.split_at(sa.sdl_nlen as usize); // Name
             let (a, data) = data.split_at(sa.sdl_alen as usize); // Address
             let (s, data) = data.split_at(sa.sdl_slen as usize); // Selector
-            drop((n, s, data));
+            let (_, _, _) = (n, s, data);
 
             Some(BsdBpfInterface {
                 name: CStr::from_ptr(ifaddr.ifa_name).to_owned(),
@@ -49,7 +49,7 @@ impl EtherInterface for BsdBpfInterface {
     type Error = Error;
     type Socket = BsdBpfSocket;
     fn open(&self, ethertype: EtherType) -> Result<BsdBpfSocket> {
-        BsdBpfSocket::new(ethertype, &self.name)
+        BsdBpfSocket::new(ethertype, &self.name, self.address)
     }
     fn name(&self) -> &str {
         self.name.to_str().unwrap_or("<INVALID>")
@@ -66,7 +66,6 @@ impl EtherInterface for BsdBpfInterface {
 }
 impl std::fmt::Debug for BsdBpfInterface {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:04x}  ", self.flags)?;
         let status = if self.is_up() { "up" } else { "down" };
         write!(f, "{:?} - {} ({}", self.address(), self.name(), status)?;
 

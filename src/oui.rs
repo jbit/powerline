@@ -8,10 +8,10 @@ impl OUI {
     pub const ST: OUI = OUI([0x00, 0x80, 0xe1]); // ST and IoTecha devices
 
     pub fn name(&self) -> Option<&'static str> {
-        Some(match self {
-            &OUI::QUALCOMM => "Qualcomm",
-            &OUI::BROADCOM => "Broadcom",
-            &OUI::ST => "ST",
+        Some(match *self {
+            OUI::QUALCOMM => "Qualcomm",
+            OUI::BROADCOM => "Broadcom",
+            OUI::ST => "ST",
             _ => return None,
         })
     }

@@ -1,4 +1,5 @@
 use clap::{App, Arg};
+use log::{debug, info, warn};
 use powerline::{homeplug::*, *};
 use std::cmp::max;
 use std::collections::HashSet;
@@ -21,9 +22,9 @@ fn discover_list<T: EtherSocket>(
         if msg.mmv() == M::MMV && msg.mmtype() == M::MMTYPE.cnf() {
             callback(addr, M::from(data));
         } else if msg.mmv() == MMV::HOMEPLUG_AV_1_1 && msg.mmtype() == MMType::CM_MME_ERROR.ind() {
-            println!("[{:?}] {:?}", addr, MMEError(data));
+            warn!("[{:?}] {:?}", addr, MMEError(data));
         } else {
-            println!("[{:?}] {:?} - Unexpected message", addr, msg);
+            warn!("[{:?}] {:?} - Unexpected message", addr, msg);
         }
     }
     Ok(())
@@ -53,54 +54,69 @@ fn single_message<'a, M: Message + From<&'a [u8]>, T: EtherSocket>(
             result = Some(M::from(buffer));
             break;
         } else if msg.mmtype() == MMType::CM_MME_ERROR.ind() {
-            println!("[{:?}] {:?}", addr, MMEError(data));
+            warn!("[{:?}] {:?}", addr, MMEError(data));
         } else {
-            println!("[{:?}] {:?} - Unexpected message", addr, msg);
+            warn!("[{:?}] {:?} - Unexpected message", addr, msg);
         }
     }
     Ok(result)
 }
 
-fn scan_on_interface<T: EtherInterface>(interface: T) -> Result<(), T::Error> {
+fn scan_on_interface<T: EtherInterface>(interface: &T) -> Result<(), T::Error> {
     let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
 
     let mut all_stations: HashSet<EtherAddr> = HashSet::new();
 
     discover_list(&mut s, |addr, msg| {
-        println!("[{:?}] {:?}", addr, msg);
+        info!("[{:?}] {:?}", addr, msg);
         all_stations.insert(addr);
         for station in msg.stations() {
             all_stations.insert(station.addr());
         }
     })?;
 
+    info!("Discovered {} stations", all_stations.len());
+
     // Try to query all stations, not just ones that replied directly to above discover messages
     for addr in all_stations {
         let mut b = [0; 1500];
         let mut oui = OUI::default();
-
-        println!("[{:?}]", addr);
+        let mut version = Default::default();
+        let mut bridged = 0;
+        info!("");
+        info!("[{:?}]", addr);
         if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
-            println!("  {:?}", m);
+            info!("  {:?}", m);
             oui = m.oui();
+            version = m.version();
         }
         if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr, &[])? {
-            println!("  {:?}", m);
+            info!("  {:?}", m);
+            bridged = m.destinations().count();
         }
+        let mut name = None;
         if oui == OUI::BROADCOM {
             let seq = 0x77;
             let mut xs = interface.open(EtherType::MEDIAXTREAM)?;
             let a = &[seq, broadcom::Property::NAME_A1.0];
             if let Some(m) = single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, a)? {
-                let s = String::from_utf8_lossy(m.records().next().unwrap());
-                println!("  Name: {}", s.trim_end_matches('\0'));
+                name = Some(String::from_utf8_lossy(m.records().next().unwrap()).to_string());
             }
         } else {
             let a = &[HFIDRequest::GET_USR.0];
             if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, a)? {
-                println!("  Name: {}", m.hfid());
+                name = Some(m.hfid().to_string());
             }
-        }
+        };
+        println!(
+            "{}: [{:?}] {:?} {:?} {}Ethers '{}'",
+            interface.name(),
+            addr,
+            version,
+            oui,
+            bridged,
+            name.unwrap_or_default()
+        );
     }
     Ok(())
 }
@@ -108,29 +124,31 @@ fn scan_on_interface<T: EtherInterface>(interface: T) -> Result<(), T::Error> {
 fn scan<T: EtherInterface>(
     interfaces: impl Iterator<Item = T>,
     mut filter: Option<HashSet<String>>,
-) -> Result<(), T::Error> {
+) {
     for interface in interfaces {
         let selected = filter.as_mut().map_or_else(
             || interface.is_up() && !interface.is_loopback(),
             |set| set.remove(interface.name()),
         );
         if selected {
-            println!();
-            println!("Interface {:?}", interface);
-            println!("---------");
-            if let Err(e) = scan_on_interface(interface) {
-                println!("Failed: {:?}", e);
+            let header = format!("Scanning Interface {:?}", interface);
+            info!("");
+            info!("{}", header);
+            info!("{}", "-".repeat(header.len()));
+            if let Err(err) = scan_on_interface(&interface) {
+                info!("{}: Failed to scan ({})", interface.name(), err);
             }
+        } else {
+            info!("{}: Skipped Interface", interface.name());
         }
     }
 
     if let Some(filter) = filter {
         if !filter.is_empty() {
-            println!();
-            println!("Unknown interfaces specified: {:?}", filter);
+            warn!("");
+            warn!("Unknown interfaces specified: {:?}", filter);
         }
     }
-    Ok(())
 }
 
 fn find_device<T: EtherInterface>(
@@ -138,6 +156,7 @@ fn find_device<T: EtherInterface>(
     mut filter: Option<HashSet<String>>,
     addr: EtherAddr,
 ) -> Result<Option<(T, OUI)>, T::Error> {
+    debug!("{:?} searching for interface", addr);
     for interface in interfaces {
         let selected = filter.as_mut().map_or_else(
             || interface.is_up() && !interface.is_loopback(),
@@ -147,6 +166,7 @@ fn find_device<T: EtherInterface>(
             let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
             let mut b = [0; 1500];
             if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
+                debug!("{:?} found on {}", addr, interface.name());
                 return Ok(Some((interface, m.oui())));
             }
         }
@@ -154,10 +174,13 @@ fn find_device<T: EtherInterface>(
 
     if let Some(filter) = filter {
         if !filter.is_empty() {
-            println!();
-            println!("Unknown interfaces specified: {:?}", filter);
+            warn!("");
+            warn!("Unknown interfaces specified: {:?}", filter);
         }
     }
+
+    debug!("{:?} not found on any selected interface", addr);
+
     Ok(None)
 }
 
@@ -217,16 +240,40 @@ fn valid_etheraddr(s: String) -> Result<(), String> {
         .map_err(|_| format!("Invalid MAC address ('{}')", s))
 }
 
+struct Logger;
+impl log::Log for Logger {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            eprintln!("{}", record.args());
+        }
+    }
+    fn flush(&self) {}
+}
+
 fn main() {
+    log::set_logger(&Logger).unwrap();
+
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .about("Power-line communication (HomePlug AV) management utility")
         .arg(
+            Arg::with_name("verbose")
+                .short("v")
+                .help("Increase verbosity")
+                .global(true)
+                .multiple(true)
+                .takes_value(false),
+        )
+        .arg(
             Arg::with_name("interfaces")
-                .long("interfaces")
+                .long("interface")
                 .help("Select the interface(s) to discover with")
                 .multiple(true)
+                .number_of_values(1)
                 .use_delimiter(true)
                 .global(true),
         )
@@ -252,9 +299,23 @@ fn main() {
         )
         .get_matches();
 
+    match matches.occurrences_of("verbose") {
+        0 => log::set_max_level(log::LevelFilter::Warn),
+        1 => log::set_max_level(log::LevelFilter::Info),
+        2 => log::set_max_level(log::LevelFilter::Debug),
+        _ => log::set_max_level(log::LevelFilter::Trace),
+    }
+    debug!("Debuglevel: {}", log::max_level());
+
     let filter = matches
         .values_of_lossy("interfaces")
         .map(HashSet::from_iter);
+
+    if let Some(filter) = &filter {
+        debug!("Interfaces: {:?}", filter);
+    } else {
+        debug!("Interfaces: ALL");
+    }
 
     let interfaces = platform_interfaces().unwrap();
 
@@ -277,7 +338,7 @@ fn main() {
             }
         }
         ("scan", _) | ("", _) => {
-            scan(interfaces, filter).unwrap();
+            scan(interfaces, filter);
         }
         _ => panic!(),
     }
