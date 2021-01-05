@@ -29,28 +29,32 @@ impl LinuxRawSocket {
             if fd == -1 {
                 return Err(Error::last_os_error());
             }
-
-            let sa = sockaddr_ll {
-                sll_family: AF_PACKET as u16,
-                sll_protocol: ethertype.as_be_u16(),
-                sll_ifindex: ifindex,
-                sll_hatype: ARPHRD_ETHER,
-                sll_pkttype: 0,
-                sll_halen: 6,
-                sll_addr: [0; 8],
-            };
-            let addr = &sa as *const _ as *const sockaddr;
-            let addrlen = size_of::<sockaddr_ll>() as u32;
-            if bind(fd, addr, addrlen) == -1 {
-                return Err(Error::last_os_error());
-            }
-
-            Ok(LinuxRawSocket {
+            let mut socket = LinuxRawSocket {
                 fd,
                 ethertype,
                 ifindex,
-            })
+            };
+            socket.bind()?;
+
+            Ok(socket)
         }
+    }
+    fn bind(&mut self) -> Result<()> {
+        let sa = sockaddr_ll {
+            sll_family: AF_PACKET as u16,
+            sll_protocol: self.ethertype.as_be_u16(),
+            sll_ifindex: self.ifindex,
+            sll_hatype: ARPHRD_ETHER,
+            sll_pkttype: 0,
+            sll_halen: 6,
+            sll_addr: [0; 8],
+        };
+        let addr = &sa as *const _ as *const sockaddr;
+        let addrlen = size_of::<sockaddr_ll>() as u32;
+        if unsafe { bind(self.fd, addr, addrlen) == -1 } {
+            return Err(Error::last_os_error());
+        }
+        Ok(())
     }
 }
 impl EtherSocket for LinuxRawSocket {

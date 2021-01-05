@@ -1,5 +1,5 @@
 use clap::{App, Arg};
-use powerline::{homeplug::*, linux::*, *};
+use powerline::{homeplug::*, *};
 use std::cmp::max;
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -61,7 +61,7 @@ fn single_message<'a, M: Message + From<&'a [u8]>, T: EtherSocket>(
     Ok(result)
 }
 
-fn scan_on_interface(interface: LinuxInterface) -> Result<(), Box<dyn std::error::Error>> {
+fn scan_on_interface<T: EtherInterface>(interface: T) -> Result<(), T::Error> {
     let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
 
     let mut all_stations: HashSet<EtherAddr> = HashSet::new();
@@ -105,9 +105,12 @@ fn scan_on_interface(interface: LinuxInterface) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-fn scan(mut interfaces: Option<HashSet<String>>) -> Result<(), Box<dyn std::error::Error>> {
-    for interface in LinuxInterface::interfaces()? {
-        let selected = interfaces.as_mut().map_or_else(
+fn scan<T: EtherInterface>(
+    interfaces: impl Iterator<Item = T>,
+    mut filter: Option<HashSet<String>>,
+) -> Result<(), T::Error> {
+    for interface in interfaces {
+        let selected = filter.as_mut().map_or_else(
             || interface.is_up() && !interface.is_loopback(),
             |set| set.remove(interface.name()),
         );
@@ -115,25 +118,28 @@ fn scan(mut interfaces: Option<HashSet<String>>) -> Result<(), Box<dyn std::erro
             println!();
             println!("Interface {:?}", interface);
             println!("---------");
-            scan_on_interface(interface)?;
+            if let Err(e) = scan_on_interface(interface) {
+                println!("Failed: {:?}", e);
+            }
         }
     }
 
-    if let Some(interfaces) = interfaces {
-        if !interfaces.is_empty() {
+    if let Some(filter) = filter {
+        if !filter.is_empty() {
             println!();
-            println!("Unknown interfaces specified: {:?}", interfaces);
+            println!("Unknown interfaces specified: {:?}", filter);
         }
     }
     Ok(())
 }
 
-fn find_device(
-    mut interfaces: Option<HashSet<String>>,
+fn find_device<T: EtherInterface>(
+    interfaces: impl Iterator<Item = T>,
+    mut filter: Option<HashSet<String>>,
     addr: EtherAddr,
-) -> Result<Option<(LinuxInterface, OUI)>, Box<dyn std::error::Error>> {
-    for interface in LinuxInterface::interfaces()? {
-        let selected = interfaces.as_mut().map_or_else(
+) -> Result<Option<(T, OUI)>, T::Error> {
+    for interface in interfaces {
+        let selected = filter.as_mut().map_or_else(
             || interface.is_up() && !interface.is_loopback(),
             |set| set.remove(interface.name()),
         );
@@ -146,21 +152,21 @@ fn find_device(
         }
     }
 
-    if let Some(interfaces) = interfaces {
-        if !interfaces.is_empty() {
+    if let Some(filter) = filter {
+        if !filter.is_empty() {
             println!();
-            println!("Unknown interfaces specified: {:?}", interfaces);
+            println!("Unknown interfaces specified: {:?}", filter);
         }
     }
     Ok(None)
 }
 
-fn set_name(
-    interface: LinuxInterface,
+fn set_name<T: EtherInterface>(
+    interface: T,
     addr: EtherAddr,
     oui: OUI,
     name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), T::Error> {
     let mut b = [0; 1500];
     let name = name.trim().as_bytes();
 
@@ -211,7 +217,7 @@ fn valid_etheraddr(s: String) -> Result<(), String> {
         .map_err(|_| format!("Invalid MAC address ('{}')", s))
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -246,14 +252,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .get_matches();
 
-    let interfaces = matches
+    let filter = matches
         .values_of_lossy("interfaces")
         .map(HashSet::from_iter);
+
+    let interfaces = platform_interfaces().unwrap();
 
     match matches.subcommand() {
         ("find", Some(args)) => {
             let addr = EtherAddr::from_str(&args.value_of_lossy("device").unwrap()).unwrap();
-            if let Some((interface, _)) = find_device(interfaces, addr)? {
+            if let Some((interface, _)) = find_device(interfaces, filter, addr).unwrap() {
                 println!("{:?}: Found on {}", addr, interface.name());
             } else {
                 println!("{:?}: Not found", addr);
@@ -262,17 +270,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("set-name", Some(args)) => {
             let addr = EtherAddr::from_str(&args.value_of_lossy("device").unwrap()).unwrap();
             let name = args.value_of_lossy("name").unwrap();
-            if let Some((interface, oui)) = find_device(interfaces, addr)? {
-                set_name(interface, addr, oui, &name)?;
+            if let Some((interface, oui)) = find_device(interfaces, filter, addr).unwrap() {
+                set_name(interface, addr, oui, &name).unwrap();
             } else {
                 println!("{:?}: Not found", addr);
             }
         }
         ("scan", _) | ("", _) => {
-            scan(interfaces)?;
+            scan(interfaces, filter).unwrap();
         }
         _ => panic!(),
     }
-
-    Ok(())
 }

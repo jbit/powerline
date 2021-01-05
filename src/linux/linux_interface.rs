@@ -1,51 +1,12 @@
 extern crate std;
 
-use crate::{linux::*, *};
+use crate::{linux::*, unix::*, *};
 use core::convert::TryInto;
-use core::ptr::null_mut;
-use libc::{freeifaddrs, getifaddrs};
 use libc::{ifaddrs, sockaddr_ll};
 use libc::{AF_PACKET, IFF_LOOPBACK, IFF_UP};
 use std::borrow::ToOwned;
 use std::ffi::{CStr, CString};
 use std::io::{Error, Result};
-
-pub struct LinuxEtherInterfaceIter {
-    first: *mut ifaddrs,
-    next: *const ifaddrs,
-}
-impl LinuxEtherInterfaceIter {
-    fn new() -> Result<LinuxEtherInterfaceIter> {
-        unsafe {
-            let mut first: *mut ifaddrs = null_mut();
-            if getifaddrs(&mut first) == -1 {
-                return Err(Error::last_os_error());
-            }
-            Ok(LinuxEtherInterfaceIter { first, next: first })
-        }
-    }
-}
-impl Iterator for LinuxEtherInterfaceIter {
-    type Item = LinuxInterface;
-    fn next(&mut self) -> Option<LinuxInterface> {
-        unsafe {
-            while let Some(ifaddr) = self.next.as_ref() {
-                self.next = ifaddr.ifa_next;
-                if let Some(addr) = ifaddr.ifa_addr.as_ref() {
-                    if addr.sa_family == AF_PACKET as u16 {
-                        return Some(LinuxInterface::new(ifaddr));
-                    }
-                }
-            }
-            None
-        }
-    }
-}
-impl Drop for LinuxEtherInterfaceIter {
-    fn drop(&mut self) {
-        unsafe { freeifaddrs(self.first) };
-    }
-}
 
 pub struct LinuxInterface {
     name: CString,
@@ -53,19 +14,24 @@ pub struct LinuxInterface {
     address: EtherAddr,
 }
 impl LinuxInterface {
-    fn new(ifaddr: &ifaddrs) -> LinuxInterface {
+    pub fn interfaces() -> Result<UnixInterfaceIter<LinuxInterface>> {
+        UnixInterfaceIter::new()
+    }
+}
+impl UnixInterface for LinuxInterface {
+    fn new(ifaddr: &ifaddrs) -> Option<LinuxInterface> {
         unsafe {
+            if ifaddr.ifa_addr.as_ref()?.sa_family != AF_PACKET as u16 {
+                return None;
+            }
             let sa = (ifaddr.ifa_addr as *const sockaddr_ll).as_ref().unwrap();
             let address = EtherAddr(sa.sll_addr[..6].try_into().unwrap());
-            LinuxInterface {
+            Some(LinuxInterface {
                 name: CStr::from_ptr(ifaddr.ifa_name).to_owned(),
                 flags: ifaddr.ifa_flags as i32,
                 address,
-            }
+            })
         }
-    }
-    pub fn interfaces() -> Result<LinuxEtherInterfaceIter> {
-        LinuxEtherInterfaceIter::new()
     }
 }
 impl EtherInterface for LinuxInterface {

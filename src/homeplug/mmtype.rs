@@ -124,7 +124,7 @@ impl MMType {
     }
 }
 impl core::fmt::Debug for MMType {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self.base() {
             Self::CC_CCO_APPOINT => write!(f, "CC_CCO_APPOINT"),
             Self::CC_BACKUP_APPOINT => write!(f, "CC_BACKUP_APPOINT"),

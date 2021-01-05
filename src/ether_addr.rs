@@ -4,8 +4,9 @@ use core::str::FromStr;
 
 #[repr(transparent)]
 #[derive(Default, PartialEq, Eq, Hash, Copy, Clone)]
-pub struct EtherAddr(pub [u8; 6]);
+pub struct EtherAddr(pub [u8; EtherAddr::SIZE]);
 impl EtherAddr {
+    pub const SIZE: usize = 6;
     pub const NULL: EtherAddr = EtherAddr([0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     pub const BROADCAST: EtherAddr = EtherAddr([0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
     pub const QUALCOMM_LOCALCAST: EtherAddr = EtherAddr([0x00, 0xb0, 0x52, 0x00, 0x00, 0x01]);
@@ -13,6 +14,9 @@ impl EtherAddr {
 
     pub fn from_slice(slice: &[u8]) -> EtherAddr {
         EtherAddr(slice.try_into().unwrap())
+    }
+    pub fn as_bytes(&self) -> [u8; EtherAddr::SIZE] {
+        self.0
     }
     pub fn oui(&self) -> OUI {
         OUI([self[0], self[1], self[2]])
@@ -37,7 +41,7 @@ impl core::ops::Deref for EtherAddr {
     }
 }
 impl core::fmt::Debug for EtherAddr {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(
             f,
             "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -49,7 +53,7 @@ impl FromStr for EtherAddr {
     type Err = ();
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let input = input.trim();
-        let mut addr = [0u8; 6];
+        let mut addr = [0u8; EtherAddr::SIZE];
         let mut i = 0;
         for part in input.split(|c| c == ':' || c == '-') {
             if i >= addr.len() {
@@ -64,7 +68,7 @@ impl FromStr for EtherAddr {
             i += 1;
         }
 
-        if i != 6 {
+        if i != EtherAddr::SIZE {
             return Err(());
         }
 
