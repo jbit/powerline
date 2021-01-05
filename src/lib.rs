@@ -8,6 +8,9 @@
 ))]
 pub mod unix;
 
+#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+pub mod bsd;
+
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub mod linux;
 
@@ -41,6 +44,12 @@ pub trait EtherInterface: core::fmt::Debug {
     fn address(&self) -> EtherAddr;
     fn is_up(&self) -> bool;
     fn is_loopback(&self) -> bool;
+}
+
+#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+pub fn platform_interfaces(
+) -> Result<impl Iterator<Item = impl EtherInterface>, impl core::fmt::Debug> {
+    bsd::BsdBpfInterface::interfaces()
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
