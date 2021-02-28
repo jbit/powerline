@@ -34,8 +34,8 @@ Tested with:
 
 Resources
 ---------
-[HomePlug Specifications](https://github.com/jbit/powerline/wiki/Documents)
-[Qualcomm open-plc-utils](https://github.com/qca/open-plc-utils)
+- [HomePlug Specifications](https://github.com/jbit/powerline/wiki/Documents)
+- [Qualcomm open-plc-utils](https://github.com/qca/open-plc-utils)
 
 
 Command-line tool
@@ -62,9 +62,9 @@ SUBCOMMANDS:
     set-name    Set the name of a device
 ```
 
-To build and install to ~/.cargo/bin:
+To build and install using cargo:
 ```
-cargo install --example powerline --path .
+cargo install powerline --examples
 ```
 
 Example output:

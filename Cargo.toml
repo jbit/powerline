@@ -1,11 +1,13 @@
 [package]
 name = "powerline"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["James Lee <jbit@jbit.net>"]
 edition = "2018"
 description = "Work-in-progress: Power-line communication library"
 keywords = ["powerline", "plc", "homeplug"]
 license = "BSD-2-Clause"
+readme = "README.md"
+repository = "https://github.com/jbit/powerline"
 
 [badges]
 maintenance = { status = "experimental" }

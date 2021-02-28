@@ -6,6 +6,10 @@ use core::mem::size_of;
 pub struct EtherType(pub u16);
 impl EtherType {
     pub const SIZE: usize = size_of::<Self>();
+    pub const IPV4: EtherType = EtherType(0x0800);
+    pub const ARP: EtherType = EtherType(0x0806);
+    pub const VLAN: EtherType = EtherType(0x8100);
+    pub const IPV6: EtherType = EtherType(0x86DD);
     pub const LLDP: EtherType = EtherType(0x88cc);
     pub const HOMEPLUG: EtherType = EtherType(0x887b);
     pub const HOMEPLUG_AV: EtherType = EtherType(0x88e1);
@@ -14,6 +18,11 @@ impl EtherType {
 
     pub fn name(&self) -> Option<&'static str> {
         Some(match *self {
+            EtherType::IPV4 => "IPv4",
+            EtherType::ARP => "ARP",
+            EtherType::VLAN => "VLAN",
+            EtherType::IPV6 => "IPv6",
+            EtherType::LLDP => "LLDP",
             EtherType::HOMEPLUG => "HomePlug",
             EtherType::HOMEPLUG_AV => "HomePlug AV",
             EtherType::MEDIAXTREAM => "Mediaxtream",
@@ -23,6 +32,9 @@ impl EtherType {
     }
     pub fn from_slice(buf: &[u8]) -> EtherType {
         EtherType(u16::from_be_bytes(buf.try_into().unwrap()))
+    }
+    pub fn as_u32(&self) -> u32 {
+        self.0 as u32
     }
     pub fn as_be_u16(&self) -> u16 {
         self.0.to_be()

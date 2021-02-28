@@ -1,10 +1,12 @@
 extern crate std;
 
+use super::bpf::*;
 use crate::*;
-use libc::{bpf_hdr, c_uint, suseconds_t, time_t, timeval};
+use libc::{bpf_hdr, c_int, c_uint, suseconds_t, time_t, timeval};
 use libc::{close, ioctl, open, read, write};
-use libc::{BIOCGSTATS, BIOCIMMEDIATE, BIOCSBLEN, BIOCSETIF, BIOCSRTIMEOUT};
+use libc::{BIOCGSTATS, BIOCIMMEDIATE, BIOCSBLEN, BIOCSETF, BIOCSETIF, BIOCSRTIMEOUT};
 use libc::{BPF_ALIGNMENT, EBUSY, IF_NAMESIZE, O_RDWR};
+use log::debug;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::read_dir;
 use std::io::{Error, ErrorKind, Result};
@@ -13,13 +15,6 @@ use std::os::unix::ffi::OsStringExt;
 use std::os::unix::io::RawFd;
 use std::vec::Vec;
 use std::{borrow::ToOwned, time::Instant};
-
-#[allow(non_camel_case_types)]
-#[derive(Debug, Copy, Clone, Default)]
-struct bpf_stat {
-    packets_received: c_uint,
-    packets_dropped: c_uint,
-}
 
 #[repr(align(16))]
 struct BpfBuffer([u8; BpfBuffer::SIZE]);
@@ -109,6 +104,7 @@ impl BsdBpfSocket {
         socket.set_buffer_len(socket.buffer.len() as c_uint)?;
         socket.set_interface(interface)?;
         socket.set_immediate(true)?;
+        socket.set_ethertype_filter()?;
 
         Ok(socket)
     }
@@ -155,6 +151,28 @@ impl BsdBpfSocket {
             }
         };
         if unsafe { ioctl(self.fd, BIOCSRTIMEOUT, &mut tv) } == -1 {
+            return Err(Error::last_os_error());
+        }
+        Ok(())
+    }
+    fn set_ethertype_filter(&mut self) -> Result<()> {
+        use instructions::*;
+        let ethertype_offset = 12;
+        let program = [
+            ldah_abs(ethertype_offset),
+            jeq(0, 1, self.ethertype.as_u32()),
+            ret(0x40000), // ethertype match
+            ret(0x00000), // ethertype mismatch
+        ];
+        self.set_filter(&program)
+    }
+    fn set_filter(&mut self, program: &[bpf_insn]) -> Result<()> {
+        let program = bpf_program {
+            bf_len: program.len() as c_int,
+            bf_insns: program.as_ptr(),
+        };
+        if unsafe { ioctl(self.fd, BIOCSETF, &program) } == -1 {
+            std::dbg!(Error::last_os_error());
             return Err(Error::last_os_error());
         }
         Ok(())
@@ -214,6 +232,11 @@ impl EtherSocket for BsdBpfSocket {
 
         // Process ethernet header
         let data = self.buffer.frame();
+        if data.len() < 14 {
+            debug!("Received ethernet frame too short ({} bytes)", data.len());
+            return self.recvfrom(buffer, timeout);
+        }
+
         let (dest_addr, data) = data.split_at(6);
         let (from_addr, data) = data.split_at(6);
         let (ethertype, data) = data.split_at(2);
@@ -222,6 +245,7 @@ impl EtherSocket for BsdBpfSocket {
         let ethertype = EtherType::from_slice(ethertype);
         if ethertype != self.ethertype {
             // Skip packets that don't match our ethertype
+            debug!("Ethertype mismatch ({:?}!={:?})", ethertype, self.ethertype);
             return self.recvfrom(buffer, timeout);
         }
 
