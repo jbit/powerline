@@ -19,14 +19,14 @@ impl BridgeInfo<'_> {
         self.payload()[3..]
             .chunks_exact(6)
             .take(count as usize)
-            .map(|data| EtherAddr::from_slice(data))
+            .map(EtherAddr::from_slice)
     }
 }
 impl Message for BridgeInfo<'_> {
     const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
     const MMTYPE: MMType = MMType::CM_BRG_INFO;
     fn message_data(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 impl core::fmt::Debug for BridgeInfo<'_> {

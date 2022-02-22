@@ -71,10 +71,7 @@ impl DiscoverList<'_> {
     pub fn stations(&self) -> impl ExactSizeIterator + Iterator<Item = Station> {
         let data = self.payload();
         let station_count = data[0] as usize;
-        data[1..]
-            .chunks_exact(12)
-            .take(station_count)
-            .map(|data| Station(data))
+        data[1..].chunks_exact(12).take(station_count).map(Station)
     }
     pub fn networks(&self) -> impl ExactSizeIterator + Iterator<Item = Network> {
         let data = self.payload();
@@ -85,17 +82,14 @@ impl DiscoverList<'_> {
         } else {
             (0, &data[0..0])
         };
-        networks
-            .chunks_exact(13)
-            .take(network_count)
-            .map(|data| Network(data))
+        networks.chunks_exact(13).take(network_count).map(Network)
     }
 }
 impl Message for DiscoverList<'_> {
     const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
     const MMTYPE: MMType = MMType::CC_DISCOVER_LIST;
     fn message_data(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 impl core::fmt::Debug for DiscoverList<'_> {

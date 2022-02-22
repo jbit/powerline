@@ -49,7 +49,7 @@ impl Message for UnknownMessage<'_> {
     const MMV: MMV = MMV(0xff);
     const MMTYPE: MMType = MMType(0xffff);
     fn message_data(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 impl core::fmt::Debug for UnknownMessage<'_> {

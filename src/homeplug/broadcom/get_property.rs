@@ -24,7 +24,7 @@ impl Message for GetProperty<'_> {
     const MMTYPE: MMType = MMType(0xa05c);
     const OUI: OUI = OUI::BROADCOM;
     fn message_data(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 impl core::fmt::Debug for GetProperty<'_> {

@@ -9,7 +9,7 @@ impl Message for SetProperty<'_> {
     const MMTYPE: MMType = MMType(0xa058);
     const OUI: OUI = OUI::BROADCOM;
     fn message_data(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 impl core::fmt::Debug for SetProperty<'_> {

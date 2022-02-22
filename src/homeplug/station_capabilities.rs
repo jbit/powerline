@@ -35,7 +35,7 @@ impl Message for StationCapabilities<'_> {
     const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
     const MMTYPE: MMType = MMType::CM_STA_CAP;
     fn message_data(&self) -> &[u8] {
-        &self.0
+        self.0
     }
 }
 impl core::fmt::Debug for StationCapabilities<'_> {
