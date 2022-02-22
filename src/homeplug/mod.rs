@@ -7,6 +7,7 @@ mod message;
 mod mmeerror;
 mod mmtype;
 mod mmv;
+mod nmk;
 mod station_capabilities;
 
 pub use bridge_info::BridgeInfo;
@@ -16,4 +17,5 @@ pub use message::*;
 pub use mmeerror::MMEError;
 pub use mmtype::*;
 pub use mmv::*;
+pub use nmk::*;
 pub use station_capabilities::StationCapabilities;
