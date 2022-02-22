@@ -26,8 +26,8 @@ pub use ether_addr::*;
 pub use ether_type::*;
 pub use oui::*;
 
-pub trait EtherSocket: core::fmt::Debug {
-    type Error: core::fmt::Debug + core::fmt::Display;
+pub trait EtherSocket: core::fmt::Debug + Send + Sync + 'static {
+    type Error: core::fmt::Debug + core::fmt::Display + Send + Sync + 'static;
     fn sendto(&mut self, destination: EtherAddr, data: &[u8]) -> Result<(), Self::Error>;
     fn recvfrom<'a>(
         &mut self,
@@ -36,8 +36,8 @@ pub trait EtherSocket: core::fmt::Debug {
     ) -> Result<Option<(EtherAddr, &'a [u8])>, Self::Error>;
 }
 
-pub trait EtherInterface: core::fmt::Debug {
-    type Error: core::fmt::Debug + core::fmt::Display;
+pub trait EtherInterface: core::fmt::Debug + Send + Sync + 'static {
+    type Error: core::fmt::Debug + core::fmt::Display + Send + Sync + 'static;
     type Socket: EtherSocket<Error = Self::Error>;
     fn open(&self, ethertype: EtherType) -> Result<Self::Socket, Self::Error>;
     fn name(&self) -> &str;

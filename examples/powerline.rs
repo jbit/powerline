@@ -184,6 +184,28 @@ fn find_device<T: EtherInterface>(
     Ok(None)
 }
 
+fn dump<T: EtherInterface>(interfaces: impl Iterator<Item = T>) {
+    let mut threads = vec![];
+    for interface in interfaces {
+        match interface.open(EtherType::HOMEPLUG_AV) {
+            Ok(mut socket) => threads.push(std::thread::spawn(move || {
+                debug!("Listening for messages on {:?}", interface);
+                let mut buffer = [0; 1500];
+                while let Some((addr, data)) = socket.recvfrom(&mut buffer, None).unwrap() {
+                    let msg = UnknownMessage(data);
+                    println!("{:w$} [{:?}] {:?}", interface.name(), addr, msg, w = 16);
+                }
+            })),
+            Err(err) => {
+                warn!("Failed to listen on '{:?}': {}", interface, err);
+            }
+        }
+    }
+    for t in threads {
+        t.join().unwrap();
+    }
+}
+
 fn set_name<T: EtherInterface>(
     interface: T,
     addr: EtherAddr,
@@ -297,6 +319,7 @@ fn main() {
                     Arg::with_name("name").required(true),
                 ]),
         )
+        .subcommand(App::new("dump").about("Dump all messages"))
         .get_matches();
 
     match matches.occurrences_of("verbose") {
@@ -336,6 +359,9 @@ fn main() {
             } else {
                 println!("{:?}: Not found", addr);
             }
+        }
+        ("dump", _) => {
+            dump(interfaces);
         }
         ("scan", _) | ("", _) => {
             scan(interfaces, filter);
