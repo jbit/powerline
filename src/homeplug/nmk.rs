@@ -24,6 +24,40 @@ pub fn generate_nmk(s: &str) -> [u8; 16] {
     hash[..16].try_into().unwrap()
 }
 
+#[repr(transparent)]
+#[derive(Default, PartialEq, Eq, Copy, Clone)]
+pub struct SecurityLevel(pub u8);
+impl SecurityLevel {
+    pub const SIMPLE: Self = Self(0x00);
+    pub const SECURE: Self = Self(0x01);
+}
+impl core::fmt::Debug for SecurityLevel {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match *self {
+            Self::SIMPLE => write!(f, "SIMPLE"),
+            Self::SECURE => write!(f, "SECURE"),
+            _ => write!(f, "SecurityLevel{:02x}", self.0),
+        }
+    }
+}
+
+#[cfg(feature = "sha2")]
+pub fn generate_nid(nmk: [u8; 16], security: SecurityLevel) -> [u8; 7] {
+    use core::convert::TryInto;
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(nmk);
+    let mut hash = hasher.finalize();
+    for _ in 0..4 {
+        let mut hasher = Sha256::new();
+        hasher.update(hash);
+        hash = hasher.finalize();
+    }
+    hash[6] = (hash[6] >> 4) | (security.0 << 4);
+    hash[..7].try_into().unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,6 +94,18 @@ mod tests {
         assert_eq!(
             generate_nmk(r#"~!@#$%^&*()_-`{}[]":;'\|<>./?"#),
             [0x16, 0x71, 0xd6, 0x1f, 0x30, 0x5e, 0x81, 0xba, 0xf0, 0x00, 0xd5, 0x8a, 0xf0, 0x98, 0x88, 0xd5],
+        );
+    }
+
+    #[test]
+    fn standard_nids() {
+        assert_eq!(
+            generate_nid(NMK_HomePlugAV, SecurityLevel::SIMPLE),
+            [0xb0, 0xf2, 0xe6, 0x95, 0x66, 0x6b, 0x03]
+        );
+        assert_eq!(
+            generate_nid(NMK_HomePlugAV0123, SecurityLevel::SECURE),
+            [0x02, 0x6b, 0xcb, 0xa5, 0x35, 0x4e, 0x18]
         );
     }
 }
