@@ -22,9 +22,10 @@ fn discover_list<T: EtherSocket>(
         if msg.mmv() == M::MMV && msg.mmtype() == M::MMTYPE.cnf() {
             callback(addr, M::from(data));
         } else if msg.mmv() == MMV::HOMEPLUG_AV_1_1 && msg.mmtype() == MMType::CM_MME_ERROR.ind() {
-            warn!("[{:?}] {:?}", addr, MMEError(data));
+            let error = MMEError(data);
+            warn!("[{addr:?}] {error:?}");
         } else {
-            warn!("[{:?}] {:?} - Unexpected message", addr, msg);
+            warn!("[{addr:?}] {msg:?} - Unexpected message");
         }
     }
     Ok(())
@@ -54,9 +55,10 @@ fn single_message<'a, M: Message + From<&'a [u8]>, T: EtherSocket>(
             result = Some(M::from(buffer));
             break;
         } else if msg.mmtype() == MMType::CM_MME_ERROR.ind() {
-            warn!("[{:?}] {:?}", addr, MMEError(data));
+            let error = MMEError(data);
+            warn!("[{addr:?}] {error:?}");
         } else {
-            warn!("[{:?}] {:?} - Unexpected message", addr, msg);
+            warn!("[{addr:?}] {msg:?} - Unexpected message");
         }
     }
     Ok(result)
@@ -68,7 +70,7 @@ fn scan_on_interface<T: EtherInterface>(interface: &T) -> Result<(), T::Error> {
     let mut all_stations: HashSet<EtherAddr> = HashSet::new();
 
     discover_list(&mut s, |addr, msg| {
-        info!("[{:?}] {:?}", addr, msg);
+        info!("[{addr:?}] {msg:?}");
         all_stations.insert(addr);
         for station in msg.stations() {
             all_stations.insert(station.addr());
@@ -84,14 +86,14 @@ fn scan_on_interface<T: EtherInterface>(interface: &T) -> Result<(), T::Error> {
         let mut version = Default::default();
         let mut bridged = 0;
         info!("");
-        info!("[{:?}]", addr);
+        info!("[{addr:?}]");
         if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
-            info!("  {:?}", m);
+            info!("  {m:?}");
             oui = m.oui();
             version = m.version();
         }
         if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr, &[])? {
-            info!("  {:?}", m);
+            info!("  {m:?}");
             bridged = m.destinations().count();
         }
         let mut name = None;
@@ -108,15 +110,8 @@ fn scan_on_interface<T: EtherInterface>(interface: &T) -> Result<(), T::Error> {
                 name = Some(m.hfid().to_string());
             }
         };
-        println!(
-            "{}: [{:?}] {:?} {:?} {}Ethers '{}'",
-            interface.name(),
-            addr,
-            version,
-            oui,
-            bridged,
-            name.unwrap_or_default()
-        );
+        let name = name.unwrap_or_default();
+        println!("{interface}: [{addr:?}] {version:?} {oui:?} {bridged}Ethers '{name}'",);
     }
     Ok(())
 }
@@ -131,22 +126,22 @@ fn scan<T: EtherInterface>(
             |set| set.remove(interface.name()),
         );
         if selected {
-            let header = format!("Scanning Interface {:?}", interface);
+            let header = format!("Scanning Interface {interface:?}");
             info!("");
-            info!("{}", header);
+            info!("{header}");
             info!("{}", "-".repeat(header.len()));
             if let Err(err) = scan_on_interface(&interface) {
-                info!("{}: Failed to scan ({})", interface.name(), err);
+                info!("{interface}: Failed to scan ({err})");
             }
         } else {
-            info!("{}: Skipped Interface", interface.name());
+            info!("{interface}: Skipped Interface");
         }
     }
 
     if let Some(filter) = filter {
         if !filter.is_empty() {
             warn!("");
-            warn!("Unknown interfaces specified: {:?}", filter);
+            warn!("Unknown interfaces specified: {filter:?}");
         }
     }
 }
@@ -156,7 +151,7 @@ fn find_device<T: EtherInterface>(
     mut filter: Option<HashSet<String>>,
     addr: EtherAddr,
 ) -> Result<Option<(T, OUI)>, T::Error> {
-    debug!("{:?} searching for interface", addr);
+    debug!("{addr:?} searching for interface");
     for interface in interfaces {
         let selected = filter.as_mut().map_or_else(
             || interface.is_up() && !interface.is_loopback(),
@@ -166,7 +161,7 @@ fn find_device<T: EtherInterface>(
             let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
             let mut b = [0; 1500];
             if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
-                debug!("{:?} found on {}", addr, interface.name());
+                debug!("{addr:?} found on {interface}");
                 return Ok(Some((interface, m.oui())));
             }
         }
@@ -175,11 +170,11 @@ fn find_device<T: EtherInterface>(
     if let Some(filter) = filter {
         if !filter.is_empty() {
             warn!("");
-            warn!("Unknown interfaces specified: {:?}", filter);
+            warn!("Unknown interfaces specified: {filter:?}");
         }
     }
 
-    debug!("{:?} not found on any selected interface", addr);
+    debug!("{addr:?} not found on any selected interface");
 
     Ok(None)
 }
@@ -189,15 +184,15 @@ fn dump<T: EtherInterface>(interfaces: impl Iterator<Item = T>) {
     for interface in interfaces {
         match interface.open(EtherType::HOMEPLUG_AV) {
             Ok(mut socket) => threads.push(std::thread::spawn(move || {
-                debug!("Listening for messages on {:?}", interface);
+                debug!("Listening for messages on {interface:?}");
                 let mut buffer = [0; 1500];
                 while let Some((addr, data)) = socket.recvfrom(&mut buffer, None).unwrap() {
                     let msg = UnknownMessage(data);
-                    println!("{:w$} [{:?}] {:?}", interface.name(), addr, msg, w = 16);
+                    println!("{interface:w$} [{addr:?}] {msg:?}", w = 16);
                 }
             })),
             Err(err) => {
-                warn!("Failed to listen on '{:?}': {}", interface, err);
+                warn!("Failed to listen on '{interface:?}': {err}");
             }
         }
     }
@@ -236,7 +231,7 @@ fn set_name<T: EtherInterface>(
             .for_each(|(dest, src)| *dest = *src);
 
         if let Some(m) = single_message::<broadcom::SetProperty, _>(&mut s, &mut b, addr, &a)? {
-            println!("  {:?}", m);
+            println!("  {m:?}");
         }
     } else {
         let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
@@ -249,7 +244,7 @@ fn set_name<T: EtherInterface>(
             .for_each(|(dest, src)| *dest = *src);
 
         if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &a)? {
-            println!("  {:?}", m);
+            println!("  {m:?}");
         }
     }
 
@@ -259,7 +254,7 @@ fn set_name<T: EtherInterface>(
 fn valid_etheraddr(s: String) -> Result<(), String> {
     EtherAddr::from_str(&s)
         .map(|_| ())
-        .map_err(|_| format!("Invalid MAC address ('{}')", s))
+        .map_err(|_| format!("Invalid MAC address ('{s}')"))
 }
 
 struct Logger;
@@ -335,7 +330,7 @@ fn main() {
         .map(HashSet::from_iter);
 
     if let Some(filter) = &filter {
-        debug!("Interfaces: {:?}", filter);
+        debug!("Interfaces: {filter:?}");
     } else {
         debug!("Interfaces: ALL");
     }
@@ -346,9 +341,9 @@ fn main() {
         ("find", Some(args)) => {
             let addr = EtherAddr::from_str(&args.value_of_lossy("device").unwrap()).unwrap();
             if let Some((interface, _)) = find_device(interfaces, filter, addr).unwrap() {
-                println!("{:?}: Found on {}", addr, interface.name());
+                println!("{addr:?}: Found on {interface}");
             } else {
-                println!("{:?}: Not found", addr);
+                println!("{addr:?}: Not found");
             }
         }
         ("set-name", Some(args)) => {
@@ -357,7 +352,7 @@ fn main() {
             if let Some((interface, oui)) = find_device(interfaces, filter, addr).unwrap() {
                 set_name(interface, addr, oui, &name).unwrap();
             } else {
-                println!("{:?}: Not found", addr);
+                println!("{addr:?}: Not found");
             }
         }
         ("dump", _) => {

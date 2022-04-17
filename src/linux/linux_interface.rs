@@ -65,3 +65,8 @@ impl std::fmt::Debug for LinuxInterface {
         Ok(())
     }
 }
+impl std::fmt::Display for LinuxInterface {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}

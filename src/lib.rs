@@ -36,7 +36,7 @@ pub trait EtherSocket: core::fmt::Debug + Send + Sync + 'static {
     ) -> Result<Option<(EtherAddr, &'a [u8])>, Self::Error>;
 }
 
-pub trait EtherInterface: core::fmt::Debug + Send + Sync + 'static {
+pub trait EtherInterface: core::fmt::Debug + core::fmt::Display + Send + Sync + 'static {
     type Error: core::fmt::Debug + core::fmt::Display + Send + Sync + 'static;
     type Socket: EtherSocket<Error = Self::Error>;
     fn open(&self, ethertype: EtherType) -> Result<Self::Socket, Self::Error>;

@@ -76,3 +76,8 @@ impl std::fmt::Debug for BsdBpfInterface {
         Ok(())
     }
 }
+impl std::fmt::Display for BsdBpfInterface {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
