@@ -46,14 +46,15 @@ pub trait EtherInterface: core::fmt::Debug + core::fmt::Display + Send + Sync + 
     fn is_loopback(&self) -> bool;
 }
 
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+/// Return an iterator of accessible platform ethernet interfaces
 pub fn platform_interfaces(
 ) -> Result<impl Iterator<Item = impl EtherInterface>, impl core::fmt::Debug> {
-    bsd::BsdBpfInterface::interfaces()
-}
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub fn platform_interfaces(
-) -> Result<impl Iterator<Item = impl EtherInterface>, impl core::fmt::Debug> {
-    linux::LinuxInterface::interfaces()
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    {
+        bsd::BsdBpfInterface::interfaces()
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        linux::LinuxInterface::interfaces()
+    }
 }

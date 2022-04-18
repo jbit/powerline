@@ -65,6 +65,13 @@ impl core::fmt::Debug for Network<'_> {
     }
 }
 
+pub struct DiscoverListRequest;
+impl<'a> MessageTX<'a> for DiscoverListRequest {
+    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
+    const MMTYPE: MMType = MMType::CC_DISCOVER_LIST;
+    type Response = DiscoverList<'a>;
+}
+
 #[derive(Eq, PartialEq, Hash)]
 pub struct DiscoverList<'a>(pub &'a [u8]);
 impl DiscoverList<'_> {
@@ -85,10 +92,8 @@ impl DiscoverList<'_> {
         networks.chunks_exact(13).take(network_count).map(Network)
     }
 }
-impl Message for DiscoverList<'_> {
-    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
-    const MMTYPE: MMType = MMType::CC_DISCOVER_LIST;
-    fn message_data(&self) -> &[u8] {
+impl MessageReader for DiscoverList<'_> {
+    fn bytes(&self) -> &[u8] {
         self.0
     }
 }

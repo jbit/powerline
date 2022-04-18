@@ -12,6 +12,6 @@ pub struct Property(pub u8);
 impl Property {
     pub const NAME_A0: Property = Property(0x1b);
     pub const NAME_B0: Property = Property(0x1c);
-    pub const NAME_A1: Property = Property(0x25);
+    pub const HFID_USER: Property = Property(0x25);
     pub const NAME_B1: Property = Property(0x26);
 }

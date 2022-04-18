@@ -1,6 +1,13 @@
 use super::*;
 use crate::*;
 
+pub struct BridgeInfoRequest;
+impl<'a> MessageTX<'a> for BridgeInfoRequest {
+    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
+    const MMTYPE: MMType = MMType::CM_BRG_INFO;
+    type Response = BridgeInfo<'a>;
+}
+
 #[derive(Eq, PartialEq, Hash)]
 pub struct BridgeInfo<'a>(pub &'a [u8]);
 impl BridgeInfo<'_> {
@@ -22,10 +29,8 @@ impl BridgeInfo<'_> {
             .map(EtherAddr::from_slice)
     }
 }
-impl Message for BridgeInfo<'_> {
-    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
-    const MMTYPE: MMType = MMType::CM_BRG_INFO;
-    fn message_data(&self) -> &[u8] {
+impl MessageReader for BridgeInfo<'_> {
+    fn bytes(&self) -> &[u8] {
         self.0
     }
 }

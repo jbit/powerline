@@ -1,67 +1,14 @@
 use clap::{App, Arg};
 use log::{debug, info, warn};
 use powerline::{homeplug::*, *};
-use std::cmp::max;
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::str::FromStr;
-use std::time::Duration;
 
-fn discover_list<T: EtherSocket>(
-    socket: &mut T,
-    mut callback: impl FnMut(EtherAddr, DiscoverList),
-) -> Result<(), T::Error> {
-    type M<'a> = DiscoverList<'a>; // TODO: This function should be able to be generic,
-    let mut message = [0u8; 60];
-    hpav_set_header::<M>(&mut message);
-    socket.sendto(EtherAddr::BROADCAST, &message)?;
-
-    let mut buffer = [0; 1500];
-    while let Some((addr, data)) = socket.recvfrom(&mut buffer, Some(Duration::from_millis(100)))? {
-        let msg = UnknownMessage(data);
-        if msg.mmv() == M::MMV && msg.mmtype() == M::MMTYPE.cnf() {
-            callback(addr, M::from(data));
-        } else if msg.mmv() == MMV::HOMEPLUG_AV_1_1 && msg.mmtype() == MMType::CM_MME_ERROR.ind() {
-            let error = MMEError(data);
-            warn!("[{addr:?}] {error:?}");
-        } else {
-            warn!("[{addr:?}] {msg:?} - Unexpected message");
-        }
-    }
-    Ok(())
-}
-
-fn single_message<'a, M: Message + From<&'a [u8]>, T: EtherSocket>(
-    socket: &mut T,
-    buffer: &'a mut [u8; 1500],
-    destination: EtherAddr,
-    arguments: &[u8],
-) -> Result<Option<M>, T::Error> {
-    buffer.iter_mut().for_each(|x| *x = 0x00);
-    let payload = hpav_set_header::<M>(buffer);
-    payload[..arguments.len()].copy_from_slice(arguments);
-
-    let size = max(60, arguments.len() + 8);
-    socket.sendto(destination, &buffer[..size])?;
-
-    let mut result = None;
-
-    while let Some((addr, data)) = socket.recvfrom(buffer, Some(Duration::from_millis(100)))? {
-        if destination.is_unicast() && addr != destination {
-            continue;
-        }
-        let msg = UnknownMessage(data);
-        if msg.mmv() == M::MMV && msg.mmtype() == M::MMTYPE.cnf() {
-            result = Some(M::from(buffer));
-            break;
-        } else if msg.mmtype() == MMType::CM_MME_ERROR.ind() {
-            let error = MMEError(data);
-            warn!("[{addr:?}] {error:?}");
-        } else {
-            warn!("[{addr:?}] {msg:?} - Unexpected message");
-        }
-    }
-    Ok(result)
+fn bytes_to_string(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .trim_end_matches('\0')
+        .to_string()
 }
 
 fn scan_on_interface<T: EtherInterface>(interface: &T) -> Result<(), T::Error> {
@@ -69,7 +16,7 @@ fn scan_on_interface<T: EtherInterface>(interface: &T) -> Result<(), T::Error> {
 
     let mut all_stations: HashSet<EtherAddr> = HashSet::new();
 
-    discover_list(&mut s, |addr, msg| {
+    discover_devices(&mut s, |addr, msg| {
         info!("[{addr:?}] {msg:?}");
         all_stations.insert(addr);
         for station in msg.stations() {
@@ -85,29 +32,54 @@ fn scan_on_interface<T: EtherInterface>(interface: &T) -> Result<(), T::Error> {
         let mut oui = OUI::default();
         let mut version = Default::default();
         let mut bridged = 0;
+
         info!("");
         info!("[{addr:?}]");
-        if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
+        if let Some(m) = send_request(&mut s, &mut b, addr, StationCapabilitiesRequest)? {
             info!("  {m:?}");
             oui = m.oui();
             version = m.version();
         }
-        if let Some(m) = single_message::<BridgeInfo, _>(&mut s, &mut b, addr, &[])? {
+        if let Some(m) = send_request(&mut s, &mut b, addr, BridgeInfoRequest)? {
             info!("  {m:?}");
             bridged = m.destinations().count();
         }
         let mut name = None;
         if oui == OUI::BROADCOM {
-            let seq = 0x77;
+            let mut seq = 0x77;
             let mut xs = interface.open(EtherType::MEDIAXTREAM)?;
-            let a = &[seq, broadcom::Property::NAME_A1.0];
-            if let Some(m) = single_message::<broadcom::GetProperty, _>(&mut xs, &mut b, addr, a)? {
-                name = Some(String::from_utf8_lossy(m.records().next().unwrap()).to_string());
+            let request = broadcom::GetPropertyRequest {
+                seq,
+                property: broadcom::Property::HFID_USER,
+            };
+            if let Some(m) = send_request(&mut xs, &mut b, addr, request)? {
+                name = Some(bytes_to_string(m.first().unwrap()));
+            }
+            seq += 1;
+            let request = broadcom::GetPropertyRequest {
+                seq,
+                property: broadcom::Property::NAME_A0,
+            };
+            if let Some(m) = send_request(&mut xs, &mut b, addr, request)? {
+                let firmware_name = bytes_to_string(m.first().unwrap());
+                info!("  Firmware({firmware_name})");
+            }
+            seq += 1;
+            let request = broadcom::GetPropertyRequest {
+                seq,
+                property: broadcom::Property::NAME_B0,
+            };
+            if let Some(m) = send_request(&mut xs, &mut b, addr, request)? {
+                let hardware_name = bytes_to_string(m.first().unwrap());
+                info!("  Hardware({hardware_name})");
             }
         } else {
-            let a = &[HFIDRequest::GET_USR.0];
-            if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, a)? {
+            if let Some(m) = send_request(&mut s, &mut b, addr, HFIDRequest::GetUsr)? {
                 name = Some(m.hfid().to_string());
+            }
+            if let Some(m) = send_request(&mut s, &mut b, addr, HFIDRequest::GetMfg)? {
+                let hardware_name = m.hfid().to_string();
+                info!("  Hardware({hardware_name})");
             }
         };
         let name = name.unwrap_or_default();
@@ -160,7 +132,7 @@ fn find_device<T: EtherInterface>(
         if selected {
             let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
             let mut b = [0; 1500];
-            if let Some(m) = single_message::<StationCapabilities, _>(&mut s, &mut b, addr, &[])? {
+            if let Some(m) = send_request(&mut s, &mut b, addr, StationCapabilitiesRequest)? {
                 debug!("{addr:?} found on {interface}");
                 return Ok(Some((interface, m.oui())));
             }
@@ -208,42 +180,26 @@ fn set_name<T: EtherInterface>(
     name: &str,
 ) -> Result<(), T::Error> {
     let mut b = [0; 1500];
-    let name = name.trim().as_bytes();
+    let mut hfid = [0u8; 64];
+    hfid.iter_mut()
+        .zip(name.trim().as_bytes())
+        .for_each(|(dest, src)| *dest = *src);
 
     if oui == OUI::BROADCOM {
         // Broadcom HPAV2 devices don't support the standard HomePlug AV HFID commands
         let mut s = interface.open(EtherType::MEDIAXTREAM)?;
-
-        let seq = 0x80;
-        let property = broadcom::Property::NAME_A1.0;
-        let count = 1;
-        let record_size = 64u16;
-        let mut a = [0u8; 70];
-        a[0] = seq;
-        a[1] = property;
-        a[2] = 0x00; // ????
-        a[3] = count;
-        a[4] = record_size.to_le_bytes()[0];
-        a[5] = record_size.to_le_bytes()[1];
-        a[6..]
-            .iter_mut()
-            .zip(name)
-            .for_each(|(dest, src)| *dest = *src);
-
-        if let Some(m) = single_message::<broadcom::SetProperty, _>(&mut s, &mut b, addr, &a)? {
+        let req = broadcom::SetPropertyRequest {
+            seq: 0x80,
+            property: broadcom::Property::HFID_USER,
+            data: hfid,
+        };
+        if let Some(m) = send_request(&mut s, &mut b, addr, req)? {
             println!("  {m:?}");
         }
     } else {
         let mut s = interface.open(EtherType::HOMEPLUG_AV)?;
-
-        let mut a = [0u8; 64];
-        a[0] = HFIDRequest::SET_USR.0;
-        a[1..]
-            .iter_mut()
-            .zip(name)
-            .for_each(|(dest, src)| *dest = *src);
-
-        if let Some(m) = single_message::<HFID, _>(&mut s, &mut b, addr, &a)? {
+        let req = HFIDRequest::SetUsr { hfid };
+        if let Some(m) = send_request(&mut s, &mut b, addr, req)? {
             println!("  {m:?}");
         }
     }

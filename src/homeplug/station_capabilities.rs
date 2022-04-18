@@ -4,25 +4,32 @@ use core::convert::TryInto;
 
 #[repr(transparent)]
 #[derive(Default, PartialEq, Eq, Copy, Clone)]
-pub struct Version(pub u8);
-impl Version {
-    pub const HOMEPLUG_AV_1_1: Version = Version(0x00);
-    pub const HOMEPLUG_AV_2_0: Version = Version(0x01);
+pub struct StationVersion(pub u8);
+impl StationVersion {
+    pub const HOMEPLUG_AV_1_1: Self = Self(0x00);
+    pub const HOMEPLUG_AV_2_0: Self = Self(0x01);
 }
-impl core::fmt::Debug for Version {
+impl core::fmt::Debug for StationVersion {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match *self {
-            Version::HOMEPLUG_AV_1_1 => write!(f, "HPAV1.1"),
-            Version::HOMEPLUG_AV_2_0 => write!(f, "HPAV2.0"),
+            Self::HOMEPLUG_AV_1_1 => write!(f, "HPAV1.1"),
+            Self::HOMEPLUG_AV_2_0 => write!(f, "HPAV2.0"),
             _ => write!(f, "HPAV???(0x{:02x})", self.0),
         }
     }
 }
 
+pub struct StationCapabilitiesRequest;
+impl<'a> MessageTX<'a> for StationCapabilitiesRequest {
+    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
+    const MMTYPE: MMType = MMType::CM_STA_CAP;
+    type Response = StationCapabilities<'a>;
+}
+
 pub struct StationCapabilities<'a>(pub &'a [u8]);
 impl StationCapabilities<'_> {
-    pub fn version(&self) -> Version {
-        Version(self.payload()[0])
+    pub fn version(&self) -> StationVersion {
+        StationVersion(self.payload()[0])
     }
     pub fn addr(&self) -> EtherAddr {
         EtherAddr::from_slice(&self.payload()[1..=6])
@@ -31,10 +38,8 @@ impl StationCapabilities<'_> {
         OUI(self.payload()[7..=9].try_into().unwrap())
     }
 }
-impl Message for StationCapabilities<'_> {
-    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
-    const MMTYPE: MMType = MMType::CM_STA_CAP;
-    fn message_data(&self) -> &[u8] {
+impl MessageReader for StationCapabilities<'_> {
+    fn bytes(&self) -> &[u8] {
         self.0
     }
 }

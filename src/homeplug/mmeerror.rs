@@ -34,10 +34,8 @@ impl MMEError<'_> {
         u16::from_le_bytes([self.payload()[4], self.payload()[5]]) as usize
     }
 }
-impl Message for MMEError<'_> {
-    const MMV: MMV = MMV::HOMEPLUG_AV_1_1;
-    const MMTYPE: MMType = MMType::CM_MME_ERROR;
-    fn message_data(&self) -> &[u8] {
+impl MessageReader for MMEError<'_> {
+    fn bytes(&self) -> &[u8] {
         self.0
     }
 }

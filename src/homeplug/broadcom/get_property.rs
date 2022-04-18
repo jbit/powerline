@@ -1,6 +1,23 @@
 use super::*;
 use crate::*;
 
+pub struct GetPropertyRequest {
+    pub seq: u8,
+    pub property: Property,
+}
+impl<'a> MessageTX<'a> for GetPropertyRequest {
+    const MMV: MMV = MMV::HOMEPLUG_AV_2_0;
+    const MMTYPE: MMType = MMType(0xa05c);
+    const OUI: OUI = OUI::BROADCOM;
+    type Response = GetProperty<'a>;
+
+    fn set_payload(&self, bytes: &mut [u8]) -> usize {
+        bytes[0] = self.seq;
+        bytes[1] = self.property.0;
+        2
+    }
+}
+
 #[derive(Eq, PartialEq, Hash)]
 pub struct GetProperty<'a>(pub &'a [u8]);
 impl GetProperty<'_> {
@@ -18,12 +35,12 @@ impl GetProperty<'_> {
             .chunks_exact(self.record_size())
             .take(self.count())
     }
+    pub fn first(&self) -> Option<&[u8]> {
+        self.records().next()
+    }
 }
-impl Message for GetProperty<'_> {
-    const MMV: MMV = MMV::HOMEPLUG_AV_2_0;
-    const MMTYPE: MMType = MMType(0xa05c);
-    const OUI: OUI = OUI::BROADCOM;
-    fn message_data(&self) -> &[u8] {
+impl MessageReader for GetProperty<'_> {
+    fn bytes(&self) -> &[u8] {
         self.0
     }
 }

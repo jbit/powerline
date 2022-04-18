@@ -14,7 +14,7 @@ maintenance = { status = "experimental" }
 
 [dependencies]
 libc = "0.2.81"
-log =  "0.4.15"
+log  = "0.4"
 sha2 = { version = "0.10", default-features = false, optional = true }
 
 [features]
